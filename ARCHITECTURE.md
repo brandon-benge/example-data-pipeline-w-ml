@@ -83,11 +83,11 @@ flowchart TB
 
 `ARCHITECTURE.md` is the build-oriented specification for the repository.
 
-Human-oriented rationale, tool-choice explanation, and business framing have been moved to [ARCHITECTURE_RATIONALE.md](./docs/ARCHITECTURE_RATIONALE.md).
+Human-oriented rationale, tool-choice explanation, and business framing have been moved to [architecture_rationale.md](./docs/architecture_rationale.md).
 
 ## 2. Goals
 
-Implementation goals and rationale are documented in [ARCHITECTURE_RATIONALE.md](./docs/ARCHITECTURE_RATIONALE.md). The remaining sections in this document should be treated as the actionable repo-building contract.
+Implementation goals and rationale are documented in [architecture_rationale.md](./docs/architecture_rationale.md). The remaining sections in this document should be treated as the actionable repo-building contract.
 
 ## 3. Functional Requirements
 
@@ -378,7 +378,7 @@ These prebuilt BI assets should be versioned with the repository so the local de
 ### 8.11 ML / MLOps
 
 
-ML implementation requirements are specified in Sections 15 and 18.5. Rationale, example algorithms, and example target choices are documented in [ARCHITECTURE_RATIONALE.md](./docs/ARCHITECTURE_RATIONALE.md).
+ML implementation requirements are specified in Sections 15 and 18.5. Rationale, example algorithms, and example target choices are documented in [architecture_rationale.md](./docs/architecture_rationale.md).
 
 ### 15.1 Operational ML decision problems
 
@@ -1584,8 +1584,8 @@ example-data-pipeline-w-ml/
 │   ├── ad_hoc_queries.md
 │   ├── dq_policy.md
 │   ├── governance.md
-│   ├── ARCHITECTURE_RATIONALE.md
-│   └── REALTIME_SCORING_USE_CASE.md
+│   ├── architecture_rationale.md
+│   └── realtime_scoring_use_case.md
 └── tests/
     ├── unit/
     ├── integration/
@@ -1973,4 +1973,4 @@ sequenceDiagram
 
 ## 21. Final Notes
 
-High-level architecture rationale has been moved to [ARCHITECTURE_RATIONALE.md](./docs/ARCHITECTURE_RATIONALE.md) so this document can stay focused on implementation detail.
+High-level architecture rationale has been moved to [architecture_rationale.md](./docs/architecture_rationale.md) so this document can stay focused on implementation detail.

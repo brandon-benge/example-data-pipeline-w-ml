@@ -150,3 +150,10 @@ Governance and quality docs:
 - [Architecture](./ARCHITECTURE.md)
 - [Architecture Rationale](./docs/architecture_rationale.md)
 - [Real-Time Scoring Use Case](./docs/realtime_scoring_use_case.md)
+
+## Author
+
+Brandon Benge  
+LinkedIn: https://www.linkedin.com/in/brandon-benge-3b57a547/
+
+If you're interested in discussing data platforms, streaming infrastructure, or AI/ML architecture, feel free to connect.

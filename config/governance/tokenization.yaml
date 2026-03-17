@@ -1,0 +1,10 @@
+rules:
+  - field: customer.email
+    tokenized_field: email_token
+    algorithm: deterministic_sha256
+  - field: customer.phone
+    tokenized_field: phone_token
+    algorithm: deterministic_sha256
+  - field: customer.customer_id
+    tokenized_field: customer_token
+    algorithm: deterministic_sha256

@@ -1,0 +1,12 @@
+rbac:
+  roles:
+    - platform_admin
+    - data_engineer
+    - analyst
+    - ml_engineer
+abac:
+  dimensions:
+    - dataset_classification
+    - environment
+    - team
+    - approved_purpose

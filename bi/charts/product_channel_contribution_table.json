@@ -1,0 +1,10 @@
+{
+  "slug": "product_channel_contribution_table",
+  "title": "Product And Channel Contribution",
+  "description": "Product and channel contribution to conversion and revenue.",
+  "dataset_slug": "gold_product_channel_contribution",
+  "viz_type": "table",
+  "groupby": ["channel", "category", "product_name"],
+  "metrics": ["total_orders", "total_quantity_sold", "total_revenue", "total_product_views"],
+  "row_limit": 25
+}

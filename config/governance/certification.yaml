@@ -1,0 +1,9 @@
+tiers:
+  - draft
+  - candidate
+  - certified
+  - deprecated
+defaults:
+  bronze: draft
+  silver: candidate
+  gold: candidate

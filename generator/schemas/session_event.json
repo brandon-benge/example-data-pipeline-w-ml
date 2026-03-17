@@ -1,0 +1,22 @@
+{
+  "type": "record",
+  "name": "session_event",
+  "namespace": "events",
+  "doc": "Schema for events.session_event. Allowed event_type values: product_view, ad_impression, ad_click, add_to_cart, checkout_start. Purchase is intentionally excluded.",
+  "fields": [
+    { "name": "event_uuid", "type": "string" },
+    { "name": "event_id", "type": "long" },
+    { "name": "session_id", "type": "long" },
+    { "name": "customer_id", "type": "long" },
+    { "name": "event_ts", "type": { "type": "long", "logicalType": "timestamp-millis" } },
+    { "name": "event_type", "type": "string" },
+    { "name": "product_id", "type": ["null", "long"], "default": null },
+    { "name": "campaign_id", "type": ["null", "long"], "default": null },
+    { "name": "page_type", "type": ["null", "string"], "default": null },
+    { "name": "search_term", "type": ["null", "string"], "default": null },
+    { "name": "position_in_list", "type": ["null", "int"], "default": null },
+    { "name": "ingest_ts", "type": { "type": "long", "logicalType": "timestamp-millis" } },
+    { "name": "producer_version", "type": "string" },
+    { "name": "schema_version", "type": "int" }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "title": "Advertiser Engagement Effectiveness",
+  "description": "Daily advertiser engagement and revenue efficiency view from the Gold mart.",
+  "schema": "gold",
+  "sql_file": "advertiser_engagement_effectiveness.sql"
+}

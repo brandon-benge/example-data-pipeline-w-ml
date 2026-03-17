@@ -1,0 +1,5 @@
+psycopg[binary]>=3.2
+requests>=2.32
+fastavro>=1.9
+kafka-python>=2.0
+lz4>=4.3

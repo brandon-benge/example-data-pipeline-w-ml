@@ -1,0 +1,163 @@
+version: 2
+
+models:
+  - name: dim_customer
+    description: Broad-access Gold customer dimension built only from masked Silver customer attributes.
+    columns:
+      - name: customer_token
+        tests:
+          - not_null
+          - unique
+  - name: dim_product
+    columns:
+      - name: product_id
+        tests:
+          - not_null
+          - unique
+  - name: dim_advertiser
+    columns:
+      - name: advertiser_id
+        tests:
+          - not_null
+          - unique
+  - name: dim_sales_rep
+    columns:
+      - name: sales_rep_id
+        tests:
+          - not_null
+          - unique
+  - name: dim_campaign
+    columns:
+      - name: campaign_id
+        tests:
+          - not_null
+          - unique
+      - name: advertiser_id
+        tests:
+          - relationships:
+              to: ref('dim_advertiser')
+              field: advertiser_id
+  - name: dim_date
+    columns:
+      - name: date_day
+        tests:
+          - not_null
+          - unique
+  - name: fct_session_events
+    columns:
+      - name: event_uuid
+        tests:
+          - not_null
+          - unique
+      - name: customer_token
+        tests:
+          - relationships:
+              to: ref('dim_customer')
+              field: customer_token
+  - name: fct_orders
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - unique
+      - name: customer_token
+        tests:
+          - relationships:
+              to: ref('dim_customer')
+              field: customer_token
+      - name: total_amount
+        tests:
+          - non_negative
+  - name: fct_order_items
+    columns:
+      - name: order_item_id
+        tests:
+          - not_null
+          - unique
+      - name: order_id
+        tests:
+          - relationships:
+              to: ref('fct_orders')
+              field: order_id
+      - name: line_amount
+        tests:
+          - non_negative
+  - name: fct_sales_activity
+    columns:
+      - name: sales_activity_id
+        tests:
+          - not_null
+          - unique
+  - name: fct_campaign_daily
+    columns:
+      - name: metric_date
+        tests:
+          - not_null
+      - name: campaign_id
+        tests:
+          - not_null
+      - name: attributed_revenue
+        tests:
+          - non_negative
+  - name: fct_advertiser_daily
+    columns:
+      - name: metric_date
+        tests:
+          - not_null
+      - name: advertiser_id
+        tests:
+          - not_null
+      - name: attributed_revenue
+        tests:
+          - non_negative
+  - name: mart_campaign_performance
+    description: Stable business mart for campaign funnel performance over time.
+    columns:
+      - name: metric_date
+        tests:
+          - not_null
+      - name: campaign_id
+        tests:
+          - not_null
+      - name: ctr
+        tests:
+          - ratio_between_zero_and_one
+      - name: attributed_revenue
+        tests:
+          - non_negative
+  - name: mart_advertiser_engagement
+    description: Stable advertiser mart for spend expansion and sales engagement analysis.
+    columns:
+      - name: metric_date
+        tests:
+          - not_null
+      - name: advertiser_id
+        tests:
+          - not_null
+      - name: ctr
+        tests:
+          - ratio_between_zero_and_one
+      - name: active_campaigns
+        tests:
+          - non_negative
+  - name: mart_customer_conversion
+    description: Stable customer funnel mart for browse-to-purchase analysis using order-derived purchases.
+    columns:
+      - name: metric_date
+        tests:
+          - not_null
+      - name: customer_token
+        tests:
+          - not_null
+      - name: purchases
+        tests:
+          - non_negative
+      - name: view_to_purchase_rate
+        tests:
+          - ratio_between_zero_and_one
+      - name: click_to_purchase_rate
+        tests:
+          - ratio_between_zero_and_one
+      - name: cart_to_purchase_rate
+        tests:
+          - ratio_between_zero_and_one

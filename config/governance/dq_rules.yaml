@@ -1,0 +1,15 @@
+rules:
+  - name: primary_key_not_null
+    severity: critical
+  - name: business_key_uniqueness
+    severity: critical
+  - name: event_type_enum
+    severity: critical
+  - name: non_negative_amounts
+    severity: critical
+  - name: volume_baseline
+    severity: warning
+  - name: distribution_drift
+    severity: warning
+  - name: reconciliation_totals
+    severity: warning

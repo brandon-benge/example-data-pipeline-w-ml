@@ -1,0 +1,6 @@
+{
+  "title": "Campaign Performance Over Time",
+  "description": "Daily campaign performance trend sourced from the certified Gold mart.",
+  "schema": "gold",
+  "sql_file": "campaign_performance_over_time.sql"
+}

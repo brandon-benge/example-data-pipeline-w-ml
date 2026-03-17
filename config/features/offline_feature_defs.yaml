@@ -1,0 +1,88 @@
+features:
+  - name: customer_purchase_features_v1
+    entity: customer
+    entity_key: customer_id
+    source_table: iceberg.silver.silver_customer_daily_metrics
+    window: 30d
+    aggregations:
+      - field: purchases
+        function: sum
+        as: purchases_30d
+      - field: order_amount
+        function: avg
+        as: avg_order_value_30d
+    label:
+      name: customer_purchase_next_7d
+      source_table: iceberg.silver.silver_order_header
+  - name: customer_purchase_realtime_features_v1
+    entity: customer
+    entity_key: customer_id
+    source_table: iceberg.silver.silver_customer_daily_metrics
+    window: 90d
+    aggregations:
+      - field: views
+        function: intraday_proxy
+        as: views_1h
+      - field: views
+        function: same_day
+        as: views_24h
+      - field: ad_clicks
+        function: same_day
+        as: ad_clicks_24h
+      - field: add_to_cart
+        function: same_day
+        as: add_to_cart_24h
+      - field: purchases
+        function: sum
+        as: purchases_30d
+      - field: order_amount
+        function: avg
+        as: avg_order_value_90d
+      - field: order_ts
+        function: days_since_last
+        as: days_since_last_purchase
+    label:
+      name: customer_purchase_next_7d
+      source_table: iceberg.silver.silver_order_header
+  - name: campaign_success_features_v1
+    entity: campaign
+    entity_key: campaign_id
+    source_table: iceberg.silver.silver_campaign_daily_metrics
+    window: 30d
+    aggregations:
+      - field: impressions
+        function: sum
+        as: impressions_7d
+      - field: clicks
+        function: sum
+        as: clicks_7d
+      - field: attributed_orders
+        function: sum
+        as: attributed_orders_30d
+      - field: attributed_revenue
+        function: sum
+        as: attributed_revenue_30d
+    label:
+      name: campaign_success_flag
+      source_table: iceberg.silver.silver_campaign_daily_metrics
+  - name: advertiser_budget_features_v1
+    entity: advertiser
+    entity_key: advertiser_id
+    source_table: iceberg.silver.silver_advertiser_daily_metrics
+    window: 30d
+    aggregations:
+      - field: active_campaigns
+        function: max
+        as: active_campaigns_30d
+      - field: sales_contacts
+        function: sum
+        as: sales_contacts_14d
+      - field: budget_amount
+        function: delta
+        as: budget_delta_30d
+      - field: attributed_revenue
+        function: sum
+        as: attributed_revenue_30d
+    label:
+      name: advertiser_budget_increase_next_30d
+      source_table: iceberg.silver.silver_advertiser_daily_metrics

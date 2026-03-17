@@ -1,0 +1,10 @@
+datasets:
+  bronze:
+    default: internal
+  silver:
+    default: confidential
+  gold:
+    default: internal
+  restricted_paths:
+    - iceberg.silver.silver_customer_current
+    - iceberg.silver.silver_sales_activity

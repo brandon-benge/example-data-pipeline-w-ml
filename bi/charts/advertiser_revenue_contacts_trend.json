@@ -1,0 +1,10 @@
+{
+  "slug": "advertiser_revenue_contacts_trend",
+  "title": "Advertiser Revenue And Sales Contacts Trend",
+  "description": "Daily trend of attributed revenue and sales contacts.",
+  "dataset_slug": "gold_advertiser_engagement",
+  "viz_type": "echarts_timeseries_line",
+  "x_axis": "metric_date",
+  "metrics": ["total_revenue", "total_sales_contacts"],
+  "row_limit": 10000
+}

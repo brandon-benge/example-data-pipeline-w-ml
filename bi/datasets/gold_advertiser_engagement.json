@@ -1,0 +1,31 @@
+{
+  "slug": "gold_advertiser_engagement",
+  "table_name": "mart_advertiser_engagement",
+  "schema": "gold",
+  "description": "Certified Gold advertiser engagement mart queried through Trino.",
+  "columns": [
+    {"name": "metric_date", "type": "DATE", "is_dttm": true, "groupby": true},
+    {"name": "advertiser_id", "type": "BIGINT"},
+    {"name": "advertiser_name", "type": "VARCHAR"},
+    {"name": "industry", "type": "VARCHAR"},
+    {"name": "account_tier", "type": "VARCHAR"},
+    {"name": "region", "type": "VARCHAR"},
+    {"name": "owner_sales_rep_id", "type": "BIGINT"},
+    {"name": "owner_sales_rep_name", "type": "VARCHAR"},
+    {"name": "active_campaigns", "type": "BIGINT"},
+    {"name": "sales_contacts", "type": "BIGINT"},
+    {"name": "impressions", "type": "BIGINT"},
+    {"name": "clicks", "type": "BIGINT"},
+    {"name": "ctr", "type": "DOUBLE"},
+    {"name": "attributed_orders", "type": "BIGINT"},
+    {"name": "attributed_revenue", "type": "DECIMAL"},
+    {"name": "revenue_per_sales_contact", "type": "DOUBLE"}
+  ],
+  "metrics": [
+    {"name": "total_revenue", "expression": "SUM(attributed_revenue)", "d3format": "$,.2f"},
+    {"name": "total_sales_contacts", "expression": "SUM(sales_contacts)"},
+    {"name": "total_active_campaigns", "expression": "SUM(active_campaigns)"},
+    {"name": "avg_ctr", "expression": "AVG(ctr)", "d3format": ".2%"},
+    {"name": "avg_revenue_per_sales_contact", "expression": "AVG(revenue_per_sales_contact)", "d3format": "$,.2f"}
+  ]
+}

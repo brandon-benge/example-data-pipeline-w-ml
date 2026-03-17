@@ -1,0 +1,47 @@
+version: 2
+
+models:
+  - name: customer_purchase_features_v1
+    columns:
+      - name: as_of_date
+        data_tests:
+          - not_null
+      - name: customer_token
+        data_tests:
+          - not_null
+      - name: customer_purchase_next_7d
+        data_tests:
+          - not_null
+  - name: customer_purchase_realtime_features_v1
+    columns:
+      - name: as_of_date
+        data_tests:
+          - not_null
+      - name: customer_id
+        data_tests:
+          - not_null
+      - name: label_value
+        data_tests:
+          - not_null
+  - name: campaign_success_features_v1
+    columns:
+      - name: as_of_date
+        data_tests:
+          - not_null
+      - name: entity_id
+        data_tests:
+          - not_null
+      - name: label_value
+        data_tests:
+          - not_null
+  - name: advertiser_budget_features_v1
+    columns:
+      - name: as_of_date
+        data_tests:
+          - not_null
+      - name: entity_id
+        data_tests:
+          - not_null
+      - name: label_value
+        data_tests:
+          - not_null

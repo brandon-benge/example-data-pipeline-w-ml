@@ -1,0 +1,31 @@
+{
+  "slug": "gold_customer_conversion",
+  "table_name": "mart_customer_conversion",
+  "schema": "gold",
+  "description": "Customer browse-to-purchase funnel mart with order-derived purchase stage.",
+  "columns": [
+    {"name": "metric_date", "type": "DATE", "is_dttm": true, "groupby": true},
+    {"name": "customer_token", "type": "VARCHAR"},
+    {"name": "customer_status", "type": "VARCHAR"},
+    {"name": "city", "type": "VARCHAR"},
+    {"name": "state", "type": "VARCHAR"},
+    {"name": "views", "type": "BIGINT"},
+    {"name": "ad_clicks", "type": "BIGINT"},
+    {"name": "add_to_cart", "type": "BIGINT"},
+    {"name": "checkout_starts", "type": "BIGINT"},
+    {"name": "purchases", "type": "BIGINT"},
+    {"name": "order_amount", "type": "DECIMAL"},
+    {"name": "avg_order_value", "type": "DOUBLE"},
+    {"name": "view_to_purchase_rate", "type": "DOUBLE"},
+    {"name": "click_to_purchase_rate", "type": "DOUBLE"},
+    {"name": "cart_to_purchase_rate", "type": "DOUBLE"}
+  ],
+  "metrics": [
+    {"name": "total_views", "expression": "SUM(views)"},
+    {"name": "total_clicks", "expression": "SUM(ad_clicks)"},
+    {"name": "total_add_to_cart", "expression": "SUM(add_to_cart)"},
+    {"name": "total_checkout_starts", "expression": "SUM(checkout_starts)"},
+    {"name": "total_purchases", "expression": "SUM(purchases)"},
+    {"name": "total_order_amount", "expression": "SUM(order_amount)", "d3format": "$,.2f"}
+  ]
+}

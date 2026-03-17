@@ -1,0 +1,4 @@
+{
+  "schemaType": "AVRO",
+  "schema": "{\"type\":\"record\",\"name\":\"session_event_key\",\"namespace\":\"events\",\"fields\":[{\"name\":\"event_uuid\",\"type\":\"string\"}]}"
+}

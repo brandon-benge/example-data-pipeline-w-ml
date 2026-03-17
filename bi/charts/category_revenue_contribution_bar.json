@@ -1,0 +1,11 @@
+{
+  "slug": "category_revenue_contribution_bar",
+  "title": "Category Revenue Contribution",
+  "description": "Revenue and order contribution by category over time.",
+  "dataset_slug": "gold_product_channel_contribution",
+  "viz_type": "bar",
+  "x_axis": "metric_date",
+  "groupby": ["category"],
+  "metrics": ["total_revenue", "total_orders"],
+  "row_limit": 10000
+}

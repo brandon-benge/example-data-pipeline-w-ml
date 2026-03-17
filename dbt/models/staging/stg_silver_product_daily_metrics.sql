@@ -1,0 +1,9 @@
+select
+    metric_date,
+    product_id,
+    product_views,
+    add_to_cart,
+    attributed_orders,
+    attributed_revenue,
+    processed_ts
+from {{ source('silver', 'silver_product_daily_metrics') }}

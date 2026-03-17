@@ -1,0 +1,9 @@
+version: 2
+
+models:
+  - name: semantic_campaign_performance
+    description: Thin semantic view over the certified campaign performance mart.
+  - name: semantic_advertiser_engagement
+    description: Thin semantic view over the certified advertiser engagement mart.
+  - name: semantic_customer_conversion
+    description: Thin semantic view over the certified customer conversion mart.

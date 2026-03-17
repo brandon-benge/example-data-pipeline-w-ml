@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: stg_silver_session_event_clean
+    columns:
+      - name: event_uuid
+        tests:
+          - not_null
+          - unique
+      - name: event_type
+        tests:
+          - accepted_values:
+              values: ['product_view', 'ad_impression', 'ad_click', 'add_to_cart', 'checkout_start']
+  - name: stg_silver_order_header
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        tests:
+          - not_null
+  - name: stg_silver_order_item
+    columns:
+      - name: order_item_id
+        tests:
+          - not_null
+          - unique
+      - name: order_id
+        tests:
+          - not_null
+  - name: stg_silver_campaign_daily_metrics
+    columns:
+      - name: campaign_id
+        tests:
+          - not_null
+      - name: metric_date
+        tests:
+          - not_null

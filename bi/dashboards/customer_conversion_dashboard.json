@@ -1,0 +1,8 @@
+{
+  "slug": "customer-conversion-dashboard",
+  "title": "Customer Browse To Purchase Funnel",
+  "chart_slugs": [
+    "customer_funnel_stage_bar",
+    "customer_conversion_rates_table"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "slug": "campaign-performance-dashboard",
+  "title": "Campaign Performance Over Time",
+  "chart_slugs": [
+    "campaign_trend_timeseries",
+    "campaign_leaderboard_table"
+  ]
+}

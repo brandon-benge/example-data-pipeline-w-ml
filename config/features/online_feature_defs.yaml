@@ -1,0 +1,38 @@
+features:
+  - name: customer_realtime_features_v1
+    entity: customer
+    entity_key: customer_id
+    redis_key_pattern: "features:customer:{customer_id}:v1"
+    ttl_seconds: 86400
+    sources:
+      - topic: events.session_event
+        filters:
+          event_type:
+            - product_view
+            - ad_click
+            - add_to_cart
+    aggregations:
+      - field: event_uuid
+        function: count_distinct
+        as: views_1h
+        window_seconds: 3600
+        when:
+          event_type: product_view
+      - field: event_uuid
+        function: count_distinct
+        as: views_24h
+        window_seconds: 86400
+        when:
+          event_type: product_view
+      - field: event_uuid
+        function: count_distinct
+        as: ad_clicks_24h
+        window_seconds: 86400
+        when:
+          event_type: ad_click
+      - field: event_uuid
+        function: count_distinct
+        as: add_to_cart_24h
+        window_seconds: 86400
+        when:
+          event_type: add_to_cart

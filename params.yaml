@@ -1,0 +1,3 @@
+customers: 100000
+events_per_minute: 4000
+orders_per_hour: 1000

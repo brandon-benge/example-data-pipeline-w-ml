@@ -1,0 +1,10 @@
+{
+  "slug": "customer_conversion_rates_table",
+  "title": "Customer Conversion Rates",
+  "description": "Daily conversion rates and purchase totals from the customer conversion mart.",
+  "dataset_slug": "gold_customer_conversion",
+  "viz_type": "table",
+  "groupby": ["metric_date", "state"],
+  "metrics": ["total_views", "total_clicks", "total_add_to_cart", "total_checkout_starts", "total_purchases", "total_order_amount"],
+  "row_limit": 50
+}

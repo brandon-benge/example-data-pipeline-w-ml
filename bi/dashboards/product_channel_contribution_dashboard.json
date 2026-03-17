@@ -1,0 +1,8 @@
+{
+  "slug": "product-channel-contribution-dashboard",
+  "title": "Category Product Channel Contribution",
+  "chart_slugs": [
+    "category_revenue_contribution_bar",
+    "product_channel_contribution_table"
+  ]
+}

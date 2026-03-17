@@ -1,0 +1,21 @@
+version: 2
+
+sources:
+  - name: silver
+    schema: silver
+    tables:
+      - name: silver_sales_rep_current
+      - name: silver_customer_current
+      - name: silver_advertiser_current
+      - name: silver_product_current
+      - name: silver_campaign_current
+      - name: silver_customer_session
+      - name: silver_session_event_clean
+      - name: silver_order_header
+      - name: silver_order_item
+      - name: silver_sales_activity
+      - name: silver_customer_daily_metrics
+      - name: silver_product_daily_metrics
+      - name: silver_campaign_daily_metrics
+      - name: silver_advertiser_daily_metrics
+      - name: customer_realtime_features_v1_parity

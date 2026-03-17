@@ -1,0 +1,5 @@
+fastavro>=1.9
+requests>=2.32
+redis>=5.0
+PyYAML>=6.0
+ruamel.yaml>=0.18

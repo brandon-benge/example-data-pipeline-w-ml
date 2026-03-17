@@ -1,0 +1,3 @@
+{"metric_date":"2026-01-01","campaign_id":301,"advertiser_id":401,"impressions":100,"clicks":3,"attributed_orders":0,"attributed_revenue":0.0,"sales_contacts":1}
+{"metric_date":"2026-01-02","campaign_id":301,"advertiser_id":401,"impressions":150,"clicks":5,"attributed_orders":1,"attributed_revenue":75.0,"sales_contacts":1}
+{"metric_date":"2026-01-03","campaign_id":301,"advertiser_id":401,"impressions":130,"clicks":4,"attributed_orders":1,"attributed_revenue":50.0,"sales_contacts":0}

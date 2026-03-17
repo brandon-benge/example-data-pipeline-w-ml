@@ -1,0 +1,10 @@
+{
+  "slug": "campaign_trend_timeseries",
+  "title": "Campaign Performance Trend",
+  "description": "Daily campaign impressions, clicks, and attributed revenue trend.",
+  "dataset_slug": "gold_campaign_performance",
+  "viz_type": "echarts_timeseries_line",
+  "x_axis": "metric_date",
+  "metrics": ["total_impressions", "total_clicks", "total_revenue"],
+  "row_limit": 10000
+}

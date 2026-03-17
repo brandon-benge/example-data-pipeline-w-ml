@@ -1,0 +1,10 @@
+{
+  "slug": "campaign_leaderboard_table",
+  "title": "Top Campaigns By Revenue",
+  "description": "Campaign leaderboard by attributed revenue and orders.",
+  "dataset_slug": "gold_campaign_performance",
+  "viz_type": "table",
+  "groupby": ["campaign_id", "advertiser_id", "campaign_status"],
+  "metrics": ["total_revenue", "total_orders", "avg_ctr"],
+  "row_limit": 20
+}

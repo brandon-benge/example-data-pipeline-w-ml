@@ -1,0 +1,25 @@
+{
+  "slug": "gold_product_channel_contribution",
+  "table_name": "product_channel_contribution",
+  "schema": "gold",
+  "sql_file": "category_product_channel_contribution.sql",
+  "description": "Virtual Gold dataset for category, product, and channel contribution to conversion and revenue.",
+  "columns": [
+    {"name": "metric_date", "type": "DATE", "is_dttm": true, "groupby": true},
+    {"name": "channel", "type": "VARCHAR"},
+    {"name": "category", "type": "VARCHAR"},
+    {"name": "product_id", "type": "BIGINT"},
+    {"name": "product_name", "type": "VARCHAR"},
+    {"name": "orders", "type": "BIGINT"},
+    {"name": "quantity_sold", "type": "BIGINT"},
+    {"name": "revenue", "type": "DECIMAL"},
+    {"name": "purchasing_customers", "type": "BIGINT"},
+    {"name": "product_views", "type": "BIGINT"}
+  ],
+  "metrics": [
+    {"name": "total_orders", "expression": "SUM(orders)"},
+    {"name": "total_quantity_sold", "expression": "SUM(quantity_sold)"},
+    {"name": "total_revenue", "expression": "SUM(revenue)", "d3format": "$,.2f"},
+    {"name": "total_product_views", "expression": "SUM(product_views)"}
+  ]
+}

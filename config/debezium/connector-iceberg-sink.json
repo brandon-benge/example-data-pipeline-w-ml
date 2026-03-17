@@ -1,0 +1,31 @@
+{
+  "name": "postgres-cdc-customer-iceberg-sink",
+  "config": {
+    "connector.class": "org.apache.iceberg.connect.IcebergSinkConnector",
+    "tasks.max": "1",
+    "topics": "cdc.customer",
+    "consumer.override.auto.offset.reset": "earliest",
+    "iceberg.catalog.type": "rest",
+    "iceberg.catalog.uri": "http://iceberg-rest:8181",
+    "iceberg.catalog.warehouse": "s3://warehouse/",
+    "iceberg.catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
+    "iceberg.catalog.s3.endpoint": "http://minio:9000",
+    "iceberg.catalog.s3.path-style-access": "true",
+    "iceberg.catalog.s3.access-key-id": "minio",
+    "iceberg.catalog.s3.secret-access-key": "minio123",
+    "iceberg.tables": "bronze.bronze_customer_cdc",
+    "iceberg.tables.auto-create-enabled": "false",
+    "iceberg.control.topic": "connect-iceberg-control-customer-v1",
+    "iceberg.control.commit.timeout-ms": "180000",
+    "iceberg.control.commit.interval-ms": "60000",
+    "transforms": "cdc,kafkaMeta",
+    "transforms.cdc.type": "org.apache.iceberg.connect.transforms.DebeziumTransform",
+    "transforms.cdc.cdc.target.pattern": "bronze.bronze_customer_cdc",
+    "transforms.kafkaMeta.type": "org.apache.iceberg.connect.transforms.KafkaMetadataTransform",
+    "transforms.kafkaMeta.nested": "false",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "true",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "true"
+  }
+}

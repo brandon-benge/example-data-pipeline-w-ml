@@ -1,0 +1,6 @@
+{
+  "title": "Customer Browse To Purchase Funnel",
+  "description": "Daily browse, click, cart, checkout, and purchase stage totals derived from Gold customer conversion outputs.",
+  "schema": "gold",
+  "sql_file": "customer_browse_to_purchase_funnel.sql"
+}

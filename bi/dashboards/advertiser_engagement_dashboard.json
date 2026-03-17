@@ -1,0 +1,8 @@
+{
+  "slug": "advertiser-engagement-dashboard",
+  "title": "Advertiser Spend Expansion And Engagement",
+  "chart_slugs": [
+    "advertiser_revenue_contacts_trend",
+    "advertiser_tier_effectiveness_table"
+  ]
+}

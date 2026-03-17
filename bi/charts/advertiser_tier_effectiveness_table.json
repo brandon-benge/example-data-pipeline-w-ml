@@ -1,0 +1,10 @@
+{
+  "slug": "advertiser_tier_effectiveness_table",
+  "title": "Advertiser Engagement Effectiveness",
+  "description": "Advertiser tier performance table with revenue efficiency metrics.",
+  "dataset_slug": "gold_advertiser_engagement",
+  "viz_type": "table",
+  "groupby": ["advertiser_name", "account_tier", "owner_sales_rep_name"],
+  "metrics": ["total_revenue", "total_sales_contacts", "avg_revenue_per_sales_contact", "avg_ctr"],
+  "row_limit": 25
+}

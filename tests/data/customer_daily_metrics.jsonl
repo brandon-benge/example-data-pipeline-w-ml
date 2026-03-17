@@ -1,0 +1,10 @@
+{"metric_date":"2026-01-01","customer_id":101,"views":4,"ad_clicks":1,"add_to_cart":0,"checkout_starts":0,"purchases":0,"order_amount":0.0,"avg_order_value":0.0}
+{"metric_date":"2026-01-02","customer_id":101,"views":5,"ad_clicks":2,"add_to_cart":1,"checkout_starts":1,"purchases":0,"order_amount":0.0,"avg_order_value":0.0}
+{"metric_date":"2026-01-03","customer_id":101,"views":3,"ad_clicks":1,"add_to_cart":1,"checkout_starts":1,"purchases":1,"order_amount":120.0,"avg_order_value":120.0}
+{"metric_date":"2026-01-04","customer_id":101,"views":6,"ad_clicks":2,"add_to_cart":1,"checkout_starts":1,"purchases":0,"order_amount":0.0,"avg_order_value":0.0}
+{"metric_date":"2026-01-05","customer_id":101,"views":2,"ad_clicks":1,"add_to_cart":0,"checkout_starts":0,"purchases":0,"order_amount":0.0,"avg_order_value":0.0}
+{"metric_date":"2026-01-01","customer_id":202,"views":1,"ad_clicks":0,"add_to_cart":0,"checkout_starts":0,"purchases":0,"order_amount":0.0,"avg_order_value":0.0}
+{"metric_date":"2026-01-02","customer_id":202,"views":2,"ad_clicks":0,"add_to_cart":0,"checkout_starts":0,"purchases":0,"order_amount":0.0,"avg_order_value":0.0}
+{"metric_date":"2026-01-03","customer_id":202,"views":1,"ad_clicks":0,"add_to_cart":0,"checkout_starts":0,"purchases":0,"order_amount":0.0,"avg_order_value":0.0}
+{"metric_date":"2026-01-04","customer_id":202,"views":2,"ad_clicks":1,"add_to_cart":0,"checkout_starts":0,"purchases":0,"order_amount":0.0,"avg_order_value":0.0}
+{"metric_date":"2026-01-05","customer_id":202,"views":1,"ad_clicks":0,"add_to_cart":0,"checkout_starts":0,"purchases":0,"order_amount":0.0,"avg_order_value":0.0}

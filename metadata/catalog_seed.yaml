@@ -1,0 +1,13 @@
+datasets:
+  - name: lakehouse.bronze.bronze_customer_cdc
+    classification: internal
+    certification_tier: draft
+    discoverability_status: hidden
+  - name: lakehouse.silver.silver_customer_current
+    classification: confidential
+    certification_tier: candidate
+    discoverability_status: searchable
+  - name: lakehouse.gold.mart_campaign_performance
+    classification: internal
+    certification_tier: candidate
+    discoverability_status: promoted

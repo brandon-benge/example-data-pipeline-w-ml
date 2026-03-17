@@ -1,0 +1,6 @@
+{
+  "title": "Category Product Channel Contribution",
+  "description": "Revenue and conversion contribution by category, product, and channel using curated Gold facts and dimensions.",
+  "schema": "gold",
+  "sql_file": "category_product_channel_contribution.sql"
+}

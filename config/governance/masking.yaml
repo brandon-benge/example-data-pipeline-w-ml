@@ -1,0 +1,10 @@
+restricted_fields:
+  - customer.first_name
+  - customer.last_name
+  - customer.email
+  - customer.phone
+  - customer.zip_code
+  - sales_activity.notes
+policies:
+  analyst:
+    mode: masked_or_dropped

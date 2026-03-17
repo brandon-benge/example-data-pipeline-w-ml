@@ -1,0 +1,15 @@
+{
+  "slug": "gold_customer_funnel_stage_totals",
+  "table_name": "customer_funnel_stage_totals",
+  "schema": "gold",
+  "sql_file": "customer_browse_to_purchase_funnel.sql",
+  "description": "Virtual Gold dataset summarizing daily customer funnel stages for BI.",
+  "columns": [
+    {"name": "metric_date", "type": "DATE", "is_dttm": true, "groupby": true},
+    {"name": "stage_name", "type": "VARCHAR"},
+    {"name": "stage_total", "type": "BIGINT"}
+  ],
+  "metrics": [
+    {"name": "stage_total", "expression": "SUM(stage_total)"}
+  ]
+}

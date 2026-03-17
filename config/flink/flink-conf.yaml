@@ -1,0 +1,22 @@
+jobmanager.rpc.address: flink-jobmanager
+jobmanager.memory.process.size: 3072m
+taskmanager.memory.process.size: 8192m
+taskmanager.numberOfTaskSlots: 4
+parallelism.default: 1
+rest.port: 8081
+io.tmp.dirs: /tmp/flink-tmp
+taskmanager.tmp.dirs: /tmp/flink-tmp
+heartbeat.interval: 10 s
+heartbeat.timeout: 120 s
+env.java.opts.all: --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED
+state.backend.type: hashmap
+state.checkpoints.dir: file:///opt/flink/state/checkpoints
+state.savepoints.dir: file:///opt/flink/state/savepoints
+execution.checkpointing.interval: 30s
+execution.checkpointing.min-pause: 10s
+execution.checkpointing.timeout: 5min
+execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+restart-strategy.type: failure-rate
+restart-strategy.failure-rate.max-failures-per-interval: 5
+restart-strategy.failure-rate.failure-rate-interval: 10 min
+restart-strategy.failure-rate.delay: 15 s

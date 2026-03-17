@@ -1,0 +1,11 @@
+{
+  "slug": "customer_funnel_stage_bar",
+  "title": "Browse To Purchase Funnel Stages",
+  "description": "Daily funnel stage totals across browse, click, cart, checkout, and purchase.",
+  "dataset_slug": "gold_customer_funnel_stage_totals",
+  "viz_type": "bar",
+  "x_axis": "metric_date",
+  "groupby": ["stage_name"],
+  "metrics": ["stage_total"],
+  "row_limit": 10000
+}

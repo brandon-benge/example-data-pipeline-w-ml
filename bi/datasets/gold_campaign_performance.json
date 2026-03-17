@@ -1,0 +1,26 @@
+{
+  "slug": "gold_campaign_performance",
+  "table_name": "mart_campaign_performance",
+  "schema": "gold",
+  "description": "Certified Gold campaign performance mart queried through Trino.",
+  "columns": [
+    {"name": "metric_date", "type": "DATE", "is_dttm": true, "groupby": true},
+    {"name": "campaign_id", "type": "BIGINT"},
+    {"name": "advertiser_id", "type": "BIGINT"},
+    {"name": "impressions", "type": "BIGINT"},
+    {"name": "clicks", "type": "BIGINT"},
+    {"name": "ctr", "type": "DOUBLE"},
+    {"name": "attributed_orders", "type": "BIGINT"},
+    {"name": "attributed_revenue", "type": "DECIMAL"},
+    {"name": "sales_contacts", "type": "BIGINT"},
+    {"name": "budget_amount", "type": "DECIMAL"},
+    {"name": "campaign_status", "type": "VARCHAR"}
+  ],
+  "metrics": [
+    {"name": "total_impressions", "expression": "SUM(impressions)"},
+    {"name": "total_clicks", "expression": "SUM(clicks)"},
+    {"name": "total_orders", "expression": "SUM(attributed_orders)"},
+    {"name": "total_revenue", "expression": "SUM(attributed_revenue)", "d3format": "$,.2f"},
+    {"name": "avg_ctr", "expression": "AVG(ctr)", "d3format": ".2%"}
+  ]
+}

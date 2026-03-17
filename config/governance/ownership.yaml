@@ -1,0 +1,36 @@
+owners:
+  commerce_platform:
+    datasets:
+      - iceberg.silver.silver_customer_current
+      - iceberg.silver.silver_order_header
+      - iceberg.silver.silver_order_item
+      - iceberg.silver.silver_customer_session
+  ad_platform:
+    datasets:
+      - iceberg.silver.silver_advertiser_current
+      - iceberg.silver.silver_campaign_current
+      - iceberg.silver.silver_sales_activity
+  analytics_engineering:
+    datasets:
+      - iceberg.gold.dim_customer
+      - iceberg.gold.dim_product
+      - iceberg.gold.dim_advertiser
+      - iceberg.gold.dim_sales_rep
+      - iceberg.gold.dim_campaign
+      - iceberg.gold.dim_date
+      - iceberg.gold.fct_session_events
+      - iceberg.gold.fct_orders
+      - iceberg.gold.fct_order_items
+      - iceberg.gold.fct_sales_activity
+      - iceberg.gold.fct_campaign_daily
+      - iceberg.gold.fct_advertiser_daily
+      - iceberg.gold.mart_campaign_performance
+      - iceberg.gold.mart_advertiser_engagement
+      - iceberg.gold.mart_customer_conversion
+      - iceberg.gold.semantic_campaign_performance
+      - iceberg.gold.semantic_advertiser_engagement
+      - iceberg.gold.semantic_customer_conversion
+  ml_platform:
+    datasets:
+      - iceberg.silver.customer_purchase_features_v1
+      - iceberg.silver.customer_realtime_features_v1_parity

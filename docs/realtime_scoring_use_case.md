@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document explains what the current repo actually demonstrates: one feature platform supporting multiple model artifacts, with customer scoring using Redis-backed request-time features plus offline context hydrated from Iceberg through Trino.
+This document explains the current runtime scoring pattern in the repo: one governed feature platform supporting multiple model artifacts, with customer scoring using Redis-backed request-time features plus offline context hydrated from Iceberg through Trino.
 
 ## Primary Use Case: Customer Purchase Propensity
 
@@ -39,15 +39,14 @@ In this repo, that context is hydrated through Trino at sign-in or session start
 
 ## End-to-End Flow
 
-1. Silver tables assemble governed historical behavior.
-2. dbt builds offline ML feature tables in Iceberg with `dbt build --select features`.
-3. `ml/train.py` trains model artifacts from those tables.
-4. Flink updates Redis with live customer event features.
-5. `ml/train.py` publishes model artifacts to MinIO and records model-version metadata in Iceberg.
-6. The compose-managed `ml-training` container publishes refreshed artifacts to MinIO and the Iceberg model registry.
-7. The compose-managed `ml-inference` service loads the latest artifact for the requested use case.
-8. It fetches live Redis features for customer scoring and hydrates offline campaign or advertiser context through Trino where needed.
-9. It returns the score and can write it back to Redis.
+1. Spark produces governed Silver tables from Bronze.
+2. dbt builds offline ML feature tables in `iceberg.silver`.
+3. The compose-managed `ml-training` container runs `ml/train.py` for the configured feature groups.
+4. Training publishes model artifacts to MinIO and records model-version metadata in `iceberg.silver.ml_model_registry`.
+5. Flink updates Redis with live customer event features.
+6. The compose-managed `ml-inference` service loads the latest artifact for the requested use case.
+7. It fetches live Redis features for customer scoring and hydrates offline campaign or advertiser context through Trino where needed.
+8. It returns the score and can write it back to Redis.
 
 ## Example Decision
 
@@ -74,8 +73,8 @@ The same feature-platform pattern also supports:
 
 Important boundary:
 - customer scoring is Redis-backed and request-time oriented
-- campaign scoring is a separate request and is hydrated from offline data only
-- advertiser scoring is a separate request and is hydrated from offline data only
+- campaign scoring is a separate request and is hydrated from offline Iceberg feature data
+- advertiser scoring is a separate request and is hydrated from offline Iceberg feature data
 
 ## Demo In This Repo
 

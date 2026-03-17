@@ -54,7 +54,7 @@ The Gold layer is intended to support questions such as:
 
 ## ML Rationale
 
-Training jobs use dbt-built Iceberg feature tables in `iceberg.silver`. v1 can use Python + scikit-learn/XGBoost with local artifact caching plus MinIO-backed artifact publishing.
+Training jobs use dbt-built Iceberg feature tables in `iceberg.silver`. The current repo trains custom logistic-regression classifiers in Python, caches local artifacts under `ml/artifacts/`, and publishes canonical copies to MinIO.
 
 The platform also supports real-time online feature serving using Redis as the low-latency feature store for approved serving features.
 
@@ -66,14 +66,13 @@ The current repo boundary is:
 - ML code trains models from those tables
 - model binaries are stored in MinIO object storage
 - model-version metadata is stored in an Iceberg registry table
-- the request-time demo script lives under `scripts/`, while the compose-managed `ml-inference` container serves the same scoring path over HTTP
+- the compose-managed `ml-inference` container is the runtime serving path, while `scripts/demo_realtime_scoring.py` remains only as a helper/demo wrapper around the same scoring logic
 
-### Initial algorithm set
+### Current algorithm set
 
-- logistic regression as a baseline binary classifier for outcomes such as `customer_purchase_next_7d`
-- random forest as an interpretable nonlinear baseline for classification tasks
-- gradient-boosted trees with XGBoost as the primary model family for classification and regression on tabular business features
-- optional linear regression or XGBoost regression for spend, revenue, or budget-change prediction targets
+- custom logistic regression for `customer_purchase_next_7d`
+- custom logistic regression for `campaign_success_flag`
+- custom logistic regression for `advertiser_budget_increase_next_30d`
 
 ### Example modeling scope
 
@@ -103,4 +102,4 @@ This architecture intentionally chooses a clear separation of concerns:
 - Apache Superset for dashboarding on approved Gold marts
 - ML training from dbt-built Iceberg feature tables for point-in-time safety
 
-It is not the smallest possible stack, but it is the smallest stack that still tells a credible modern platform story.
+It is not the smallest possible stack, but it is the smallest stack that still tells a credible modern platform story with explicit CDC ingestion, governed medallion processing, BI serving, and containerized ML inference.

@@ -118,17 +118,17 @@ Implementation goals and rationale are documented in [architecture_rationale.md]
 
 ### Curated analytics
 - Use dbt to run Spark SQL transformations.
-- Build Gold dimensions, facts, and aggregate marts.
+- Build Gold dimensions, facts, aggregate marts, and ML feature tables from Silver.
 - Expose BI-ready tables for dashboarding and ad hoc SQL.
 - Serve at least one open-source dashboard application against Gold through a SQL query engine.
 
 ### ML / MLOps
-- Train models from Silver tables.
-- Build reusable feature datasets from Silver.
+- Train models from dbt-built feature tables in `iceberg.silver`.
+- Build reusable feature datasets from Silver through dbt.
 - Maintain shared versioned feature definitions for offline and online feature computation.
 - Publish selected low-latency features to Redis from streaming inputs.
 - Support batch retraining.
-- Store model artifacts and metrics locally.
+- Cache model artifacts locally, publish canonical copies to MinIO, and register model metadata in `iceberg.silver.ml_model_registry`.
 
 ### Governance and metadata
 - Register table ownership.
@@ -296,9 +296,8 @@ The local deployment uses a single-broker Kafka cluster in KRaft mode.
 Flink jobs are implemented in PyFlink.
 
 Flink performs:
-- topic consumption
-- CDC envelope normalization
-- raw landing to Bronze Iceberg
+- topic consumption for direct event streams
+- raw landing of direct event history to Bronze Iceberg
 - incremental computation of approved online features from Kafka streams
 - direct writes of low-latency serving features to Redis
 - direct-event schema resolution against Schema Registry
@@ -812,13 +811,13 @@ Bronze stores raw, append-preserving history.
 
 ### 11.2 Spark SQL syntax for Iceberg DDL
 
-Assume catalog name lakehouse and namespaces bronze, silver, and gold.
+Assume catalog name iceberg and namespaces bronze, silver, and gold.
 
 These examples use Spark SQL syntax and should be executed by Spark, not Trino.
 
 #### Bronze CDC example
 ```sql
-CREATE TABLE IF NOT EXISTS lakehouse.bronze.bronze_customer_cdc (
+CREATE TABLE IF NOT EXISTS iceberg.bronze.bronze_customer_cdc (
     record_key STRING,
     source_table STRING,
     op STRING,
@@ -854,7 +853,7 @@ TBLPROPERTIES (
 
 #### Bronze direct event example
 ```sql
-CREATE TABLE IF NOT EXISTS lakehouse.bronze.bronze_session_event_raw (
+CREATE TABLE IF NOT EXISTS iceberg.bronze.bronze_session_event_raw (
     event_uuid STRING,
     event_id BIGINT,
     session_id BIGINT,
@@ -884,7 +883,7 @@ TBLPROPERTIES (
 
 #### Silver current-state table example
 ```sql
-CREATE TABLE IF NOT EXISTS lakehouse.silver.silver_customer_current (
+CREATE TABLE IF NOT EXISTS iceberg.silver.silver_customer_current (
     customer_id BIGINT,
     first_name_masked STRING,
     last_name_masked STRING,
@@ -911,7 +910,7 @@ TBLPROPERTIES (
 
 #### Silver clean event table example
 ```sql
-CREATE TABLE IF NOT EXISTS lakehouse.silver.silver_session_event_clean (
+CREATE TABLE IF NOT EXISTS iceberg.silver.silver_session_event_clean (
     event_uuid STRING,
     session_id BIGINT,
     customer_id BIGINT,
@@ -938,7 +937,7 @@ TBLPROPERTIES (
 
 #### Silver aggregate table example
 ```sql
-CREATE TABLE IF NOT EXISTS lakehouse.silver.silver_campaign_daily_metrics (
+CREATE TABLE IF NOT EXISTS iceberg.silver.silver_campaign_daily_metrics (
     metric_date DATE,
     campaign_id BIGINT,
     advertiser_id BIGINT,
@@ -959,7 +958,7 @@ TBLPROPERTIES (
 
 #### Gold mart example
 ```sql
-CREATE TABLE IF NOT EXISTS lakehouse.gold.mart_campaign_performance (
+CREATE TABLE IF NOT EXISTS iceberg.gold.mart_campaign_performance (
     metric_date DATE,
     campaign_id BIGINT,
     advertiser_id BIGINT,
@@ -1224,9 +1223,9 @@ Spark performs:
 
 ### Training source
 
-ML training reads dbt-built feature tables in `lakehouse.silver`.
+ML training reads dbt-built feature tables in `iceberg.silver`.
 
-Model artifacts are cached under `ml/artifacts/`, published to the MinIO `ml-artifacts` bucket, versioned in `lakehouse.silver.ml_model_registry`, and served by the compose-managed `ml-inference` container.
+Model artifacts are cached under `ml/artifacts/`, published to the MinIO `ml-artifacts` bucket, versioned in `iceberg.silver.ml_model_registry`, and served by the compose-managed `ml-inference` container.
 
 The platform supports one shared feature platform with multiple downstream model artifacts and multiple scoring outputs:
 - shared offline feature definitions in `config/features/offline_feature_defs.yaml`
@@ -1235,11 +1234,11 @@ The platform supports one shared feature platform with multiple downstream model
 - multiple model artifacts published from the same governed feature platform
 - multiple real-time or request-time scoring outputs produced from the same governed feature contracts
 
-In the local implementation, dbt materializes ML feature tables as Iceberg tables in the `lakehouse.silver` schema, and training reads those tables directly through Trino-backed reads.
+In the local implementation, dbt materializes ML feature tables as Iceberg tables in the `iceberg.silver` schema, and training reads those tables directly through Trino-backed reads.
 
 Silver-derived feature dataset outputs used by the local implementation:
-- `lakehouse.silver.customer_purchase_features_v1` stores versioned offline customer training rows derived from Silver metrics and order history, with tokenized customer join keys and the `customer_purchase_next_7d` label.
-- `lakehouse.silver.customer_realtime_features_v1_parity` stores Spark-recomputed customer online-feature reference values used to reconcile offline Silver truth against Redis-served feature records.
+- `iceberg.silver.customer_purchase_features_v1` stores versioned offline customer training rows derived from Silver metrics and order history, with tokenized customer join keys and the `customer_purchase_next_7d` label.
+- `iceberg.silver.customer_realtime_features_v1_parity` stores Spark-recomputed customer online-feature reference values used to reconcile offline Silver truth against Redis-served feature records.
 
 Current local model artifact families:
 - `customer_realtime`
@@ -1255,11 +1254,11 @@ Current local model artifact families:
   - predicts `advertiser_budget_increase_next_30d`
 
 Current local Iceberg feature tables:
-- `lakehouse.silver.customer_purchase_features_v1`
-- `lakehouse.silver.customer_purchase_realtime_features_v1`
-- `lakehouse.silver.campaign_success_features_v1`
-- `lakehouse.silver.advertiser_budget_features_v1`
-- `lakehouse.silver.ml_model_registry`
+- `iceberg.silver.customer_purchase_features_v1`
+- `iceberg.silver.customer_purchase_realtime_features_v1`
+- `iceberg.silver.campaign_success_features_v1`
+- `iceberg.silver.advertiser_budget_features_v1`
+- `iceberg.silver.ml_model_registry`
 
 ### Online feature serving
 
@@ -1290,7 +1289,7 @@ features:
   - name: customer_purchase_features_v1
     entity: customer
     entity_key: customer_id
-    source_table: lakehouse.silver.silver_customer_daily_metrics
+    source_table: iceberg.silver.silver_customer_daily_metrics
     window: 30d
     aggregations:
       - field: purchases
@@ -1301,7 +1300,7 @@ features:
         as: avg_order_value_30d
     label:
       name: customer_purchase_next_7d
-      source_table: lakehouse.silver.silver_order_header
+      source_table: iceberg.silver.silver_order_header
 ```
 
 Example `config/features/online_feature_defs.yaml`:
@@ -1373,22 +1372,19 @@ Current local scoring pattern
 - advertiser_budget_increase_next_30d
 
 #### Baseline algorithms
-- logistic regression for baseline binary classification and calibration-friendly comparisons
-- random forest for nonlinear baseline classification with simple feature importance
-- XGBoost classifier for the primary tabular classification workload
-- linear regression or XGBoost regressor for numeric targets such as spend change, revenue, or propensity scores where modeled as regression
+- custom logistic regression for baseline binary classification across the current local model set
 
-#### Recommended algorithm-to-problem mapping
-- `customer_purchase_next_7d` -> logistic regression baseline, then XGBoost classifier
-- `campaign_success_flag` -> random forest baseline, then XGBoost classifier
-- `advertiser_budget_increase_next_30d` -> logistic regression or XGBoost classifier if framed as binary, or XGBoost regressor if framed as expected budget delta
+#### Current algorithm-to-problem mapping
+- `customer_purchase_next_7d` -> custom logistic regression classifier
+- `campaign_success_flag` -> custom logistic regression classifier
+- `advertiser_budget_increase_next_30d` -> custom logistic regression classifier
 
 #### ML artifact outputs
 - training dataset snapshots
 - model binary
 - metrics JSON
 - feature definition version
-- cached under `ml/artifacts/`, published to MinIO, and versioned in `lakehouse.silver.ml_model_registry`
+- cached under `ml/artifacts/`, published to MinIO, and versioned in `iceberg.silver.ml_model_registry`
 
 #### Example scoring outputs
 - `customer_purchase_propensity`
@@ -1488,7 +1484,7 @@ example-data-pipeline-w-ml/
 │   ├── trino/
 │   │   ├── config.properties
 │   │   └── catalog/
-│   │       └── lakehouse.properties
+│   │       └── iceberg.properties
 │   ├── spark/
 │   │   └── spark-defaults.conf
 │   ├── redis/
@@ -1670,16 +1666,16 @@ s3.endpoint=http://minio:9000
 Example `config/spark/spark-defaults.conf`:
 
 ```properties
-spark.sql.catalog.lakehouse=org.apache.iceberg.spark.SparkCatalog
-spark.sql.catalog.lakehouse.type=rest
-spark.sql.catalog.lakehouse.uri=http://iceberg-rest:8181
-spark.sql.catalog.lakehouse.warehouse=s3://warehouse/
-spark.sql.catalog.lakehouse.io-impl=org.apache.iceberg.aws.s3.S3FileIO
-spark.sql.catalog.lakehouse.s3.endpoint=http://minio:9000
-spark.sql.catalog.lakehouse.s3.path-style-access=true
+spark.sql.catalog.iceberg=org.apache.iceberg.spark.SparkCatalog
+spark.sql.catalog.iceberg.type=rest
+spark.sql.catalog.iceberg.uri=http://iceberg-rest:8181
+spark.sql.catalog.iceberg.warehouse=s3://warehouse/
+spark.sql.catalog.iceberg.io-impl=org.apache.iceberg.aws.s3.S3FileIO
+spark.sql.catalog.iceberg.s3.endpoint=http://minio:9000
+spark.sql.catalog.iceberg.s3.path-style-access=true
 ```
 
-Example `config/trino/catalog/lakehouse.properties`:
+Example `config/trino/catalog/iceberg.properties`:
 
 ```properties
 connector.name=iceberg
@@ -1707,7 +1703,7 @@ Required commands include:
 - `superset db upgrade`
 - `superset fab create-admin`
 - `superset init`
-- create a Trino database connection pointing at the local Trino service and Gold-accessible catalog/schema, using a local connection URI such as `trino://trino:8080/lakehouse`
+- create a Trino database connection pointing at the local Trino service and Gold-accessible catalog/schema, using a local connection URI such as `trino://trino:8080/iceberg`
 - `superset import-dashboards --path /app/bi/dashboards --username admin`
 
 ## 18. Iceberg Table Contracts
@@ -1855,7 +1851,7 @@ Historical request-time context is hydrated separately from Iceberg-backed featu
 
 1. dbt derives feature tables from Silver.
 2. Training job reads those feature tables directly.
-3. Model artifacts are published to MinIO and registered in `lakehouse.silver.ml_model_registry`.
+3. Model artifacts are published to MinIO and registered in `iceberg.silver.ml_model_registry`.
 
 ### 19.4 Online feature serving flow
 

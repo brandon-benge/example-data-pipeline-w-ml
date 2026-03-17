@@ -1,8 +1,24 @@
 # Example Data Pipeline with ML
 
-Local laptop-scale data, BI, and ML demo repository built from [ARCHITECTURE.md](./ARCHITECTURE.md).
+Architecture overview:
 
-## What it includes
+![Platform Architecture](./docs/image.png)
+
+This repository demonstrates how a modern data platform can support **real-time ML decisions** using streaming pipelines, a lakehouse architecture, and an inference service.
+
+📖 **Blog walkthrough**  
+Full architecture explanation and design discussion:  
+https://github.com/brandon-benge/example-data-pipeline-w-ml/blob/main/docs/blog.md
+
+📐 **Detailed architecture specification**  
+See the full architecture definition here:  
+https://github.com/brandon-benge/example-data-pipeline-w-ml/blob/main/ARCHITECTURE.md
+
+## Platform Overview
+
+This repository contains a **local laptop-scale end-to-end platform** that demonstrates how streaming, batch processing, analytics, and ML inference systems can work together to produce real operational decisions.
+
+Key components include:
 
 - Postgres source tables with Debezium CDC into Kafka
 - direct behavioral events on `events.session_event` with Schema Registry
@@ -11,6 +27,15 @@ Local laptop-scale data, BI, and ML demo repository built from [ARCHITECTURE.md]
 - Gold dimensions, facts, marts, and semantic views in dbt
 - Trino and Superset for curated BI access
 - local ML training code plus a containerized inference service that reads dbt-built Iceberg feature tables and publishes artifacts to MinIO-backed object storage
+
+## Architecture Layers
+
+- Ingestion: Postgres, Debezium, Kafka Connect, Kafka, Schema Registry
+- Stream Processing: Kafka Connect Iceberg sinks, Flink, Redis
+- Lakehouse: Apache Iceberg, Iceberg REST Catalog, MinIO
+- Batch Processing: Spark, dbt
+- Analytics: Trino, Apache Superset
+- ML: scikit-learn, MinIO, FastAPI, Redis
 
 ## Setup
 
@@ -52,6 +77,16 @@ That seeds:
 2. Run the synthetic generator manually.
 3. Let the compose-managed Kafka Connect, Flink, and Spark services process CDC and event data into Bronze, Silver, Gold-supporting Silver datasets, Redis, and Superset.
 4. Inspect curated outputs through Superset, Trino, Redis, and repository-managed metadata/artifacts.
+
+## Example ML Decisions
+
+The platform demonstrates three operational ML decision patterns:
+
+- **Customer purchase propensity** – predicts likelihood of a near-term purchase
+- **Campaign success propensity** – predicts whether a campaign will perform well
+- **Advertiser budget expansion** – predicts likelihood of increased advertising spend
+
+These predictions are exposed through the containerized inference service.
 
 ## Key paths
 
@@ -111,6 +146,7 @@ Governance and quality docs:
 
 ## Reference Material
 
+- [Architecture Blog](./docs/blog.md)
 - [Architecture](./ARCHITECTURE.md)
 - [Architecture Rationale](./docs/architecture_rationale.md)
 - [Real-Time Scoring Use Case](./docs/realtime_scoring_use_case.md)

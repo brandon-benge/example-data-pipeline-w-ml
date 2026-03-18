@@ -1,6 +1,6 @@
 FROM gradle:8.10.2-jdk17 AS iceberg_connect_builder
 
-ARG ICEBERG_VERSION=1.9.1
+ARG ICEBERG_VERSION=1.10.1
 
 WORKDIR /build
 
@@ -31,7 +31,7 @@ RUN set -eux; \
     rm -rf /tmp/iceberg-connect
 
 
-FROM debezium/connect:2.7.3.Final
+FROM quay.io/debezium/connect:3.3.2.Final
 
 USER root
 

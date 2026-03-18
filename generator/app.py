@@ -15,7 +15,7 @@ from generator.scenarios.campaigns import generate_campaign_products, generate_c
 from generator.scenarios.customers import generate_customers, generate_sales_reps
 from generator.scenarios.orders import generate_orders_and_items
 from generator.scenarios.sales_activity import generate_sales_activities
-from generator.scenarios.sessions import generate_customer_sessions, generate_session_events
+from generator.scenarios.sessions import build_session_plans, generate_customer_sessions, generate_session_events
 from generator.scenarios.products import generate_products
 
 
@@ -39,11 +39,13 @@ def build_source_bundle(settings: GeneratorSettings) -> tuple[dict[str, list[dic
     campaigns = generate_campaigns(rng, settings.campaigns, advertisers, settings.generated_at)
     campaign_products = generate_campaign_products(rng, campaigns, products, settings.generated_at)
     sessions = generate_customer_sessions(rng, customers, settings.sessions, settings.generated_at)
+    session_plans = build_session_plans(rng, sessions, campaigns, products, campaign_products)
     order_headers, order_items = generate_orders_and_items(
         rng,
         customers,
         products,
         campaigns,
+        session_plans,
         settings.orders_per_hour,
         settings.generated_at,
     )
@@ -56,9 +58,7 @@ def build_source_bundle(settings: GeneratorSettings) -> tuple[dict[str, list[dic
     )
     events = generate_session_events(
         rng,
-        sessions,
-        campaigns,
-        products,
+        session_plans,
         settings.events_per_minute,
         settings.schema_version,
         settings.producer_version,

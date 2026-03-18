@@ -19,7 +19,7 @@ class TrainingPipelineIntegrationTest(unittest.TestCase):
             order_header_path=str(DATA_DIR / "order_header.jsonl"),
         )
         with TemporaryDirectory() as temp_dir:
-            result = train_from_rows(rows, "customer", artifact_root=temp_dir)
+            result = train_from_rows(rows, "customer", artifact_root=temp_dir, publish_artifacts=False, register_model=False)
             manifest_path = Path(result["artifact_paths"]["manifest"])
             metrics_path = Path(result["artifact_paths"]["metrics"])
             dataset_path = Path(result["artifact_paths"]["dataset"])

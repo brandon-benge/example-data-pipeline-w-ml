@@ -9,7 +9,18 @@ from typing import Any
 from pyspark.sql.column import Column
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import StructType
+from pyspark.sql.types import (
+    DateType,
+    DoubleType,
+    FloatType,
+    IntegralType,
+    LongType,
+    ShortType,
+    StructField,
+    StructType,
+    TimestampNTZType,
+    TimestampType,
+)
 from pyspark.sql.window import Window
 
 
@@ -171,17 +182,50 @@ def append_jsonl(path: str | Path, record: dict[str, Any]) -> None:
         handle.write("\n")
 
 
-def append_dq_result(rule_name: str, severity: str, dataset: str, passed: bool, details: dict[str, Any]) -> None:
-    append_jsonl(
-        METADATA_ROOT / "table_contracts" / "dq_results.jsonl",
-        {
-            "rule_name": rule_name,
-            "severity": severity,
-            "dataset": dataset,
-            "passed": passed,
-            "details": details,
-            "recorded_at": utc_now().isoformat(),
-        },
+def write_json(path: str | Path, payload: Any) -> None:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+
+
+def upsert_json_record(path: str | Path, key: str, record: dict[str, Any]) -> None:
+    output_path = Path(path)
+    existing: dict[str, Any] = {}
+    if output_path.exists() and output_path.stat().st_size > 0:
+        try:
+            loaded = json.loads(output_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing = loaded
+        except json.JSONDecodeError:
+            existing = {}
+    existing[key] = record
+    write_json(output_path, existing)
+
+
+def append_dq_result(
+    rule_name: str,
+    severity: str,
+    dataset: str,
+    passed: bool,
+    details: dict[str, Any],
+    *,
+    run_id: str | None = None,
+) -> None:
+    record = {
+        "rule_name": rule_name,
+        "severity": severity,
+        "dataset": dataset,
+        "passed": passed,
+        "details": details,
+        "recorded_at": utc_now().isoformat(),
+    }
+    if run_id is not None:
+        record["run_id"] = run_id
+    append_jsonl(METADATA_ROOT / "table_contracts" / "dq_results.jsonl", record)
+    upsert_json_record(
+        METADATA_ROOT / "table_contracts" / "latest_results.json",
+        f"{dataset}:{rule_name}",
+        record,
     )
 
 
@@ -215,18 +259,52 @@ def _existing_col(df: DataFrame, *candidates: str) -> Column | None:
     return None
 
 
-def _coerce_timestamp(column: Column | None) -> Column | None:
+def _existing_field(df: DataFrame, *candidates: str) -> StructField | None:
+    for candidate in candidates:
+        if candidate in df.columns:
+            field = next((item for item in df.schema.fields if item.name == candidate), None)
+            if field is not None:
+                return field
+            continue
+
+        parts = candidate.split(".")
+        current: StructType | None = df.schema
+        field: StructField | None = None
+        for part in parts:
+            if not isinstance(current, StructType):
+                field = None
+                break
+            field = next((item for item in current.fields if item.name == part), None)
+            if field is None:
+                break
+            current = field.dataType if isinstance(field.dataType, StructType) else None
+        if field is not None:
+            return field
+    return None
+
+
+def _coerce_timestamp(column: Column | None, dtype: object | None = None) -> Column | None:
     if column is None:
         return None
+    if isinstance(dtype, (TimestampType, TimestampNTZType)):
+        return column.cast("timestamp")
+    if isinstance(dtype, DateType):
+        return column.cast("timestamp")
+    if isinstance(dtype, (IntegralType, FloatType, DoubleType)):
+        return F.to_timestamp(F.from_unixtime(column.cast("double") / F.lit(1000.0)))
     return F.coalesce(
         column.cast("timestamp"),
         F.to_timestamp(F.from_unixtime(column.cast("double") / F.lit(1000.0))),
     )
 
 
-def _coerce_millis(column: Column | None) -> Column | None:
+def _coerce_millis(column: Column | None, dtype: object | None = None) -> Column | None:
     if column is None:
         return None
+    if isinstance(dtype, (IntegralType, LongType, ShortType)):
+        return column.cast("long")
+    if isinstance(dtype, (TimestampType, TimestampNTZType, DateType)):
+        return F.unix_millis(column.cast("timestamp"))
     return F.coalesce(
         column.cast("long"),
         F.unix_millis(column.cast("timestamp")),
@@ -244,8 +322,10 @@ def normalize_cdc_df(df: DataFrame, business_key: str) -> DataFrame:
     cdc_key = _existing_col(normalized, "_cdc.key", "_cdc_key")
     cdc_op = _existing_col(normalized, "_cdc.op", "_cdc_op")
     cdc_ts = _existing_col(normalized, "_cdc.ts", "_cdc_ts")
+    cdc_ts_field = _existing_field(normalized, "_cdc.ts", "_cdc_ts")
     cdc_offset = _existing_col(normalized, "_cdc.offset", "_cdc_offset", "_kafka_metadata_offset")
     kafka_timestamp = _existing_col(normalized, "_kafka_metadata_timestamp")
+    kafka_timestamp_field = _existing_field(normalized, "_kafka_metadata_timestamp")
 
     if cdc_op is None or cdc_ts is None or cdc_offset is None:
         raise ValueError(
@@ -267,12 +347,12 @@ def normalize_cdc_df(df: DataFrame, business_key: str) -> DataFrame:
         normalized = normalized.withColumn("op", cdc_op.cast("string"))
 
     if "source_ts_ms" not in normalized.columns:
-        source_ts_ms = _coerce_millis(cdc_ts)
+        source_ts_ms = _coerce_millis(cdc_ts, cdc_ts_field.dataType if cdc_ts_field is not None else None)
         if source_ts_ms is not None:
             normalized = normalized.withColumn("source_ts_ms", source_ts_ms)
 
     if "source_ts" not in normalized.columns:
-        source_ts = _coerce_timestamp(cdc_ts)
+        source_ts = _coerce_timestamp(cdc_ts, cdc_ts_field.dataType if cdc_ts_field is not None else None)
         if source_ts is not None:
             normalized = normalized.withColumn("source_ts", source_ts)
 
@@ -280,7 +360,10 @@ def normalize_cdc_df(df: DataFrame, business_key: str) -> DataFrame:
         normalized = normalized.withColumn("source_offset", cdc_offset.cast("long"))
 
     if "ingest_ts" not in normalized.columns:
-        ingest_ts = _coerce_timestamp(kafka_timestamp)
+        ingest_ts = _coerce_timestamp(
+            kafka_timestamp,
+            kafka_timestamp_field.dataType if kafka_timestamp_field is not None else None,
+        )
         if ingest_ts is not None:
             normalized = normalized.withColumn("ingest_ts", ingest_ts)
         else:

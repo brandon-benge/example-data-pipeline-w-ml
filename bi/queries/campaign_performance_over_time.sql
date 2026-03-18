@@ -4,6 +4,6 @@ select
     sum(clicks) as clicks,
     sum(attributed_orders) as attributed_orders,
     sum(attributed_revenue) as attributed_revenue
-from lakehouse.gold.mart_campaign_performance
+from iceberg.gold.mart_campaign_performance
 group by 1
 order by 1

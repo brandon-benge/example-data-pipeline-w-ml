@@ -1,3 +1,24 @@
-customers: 100000
-events_per_minute: 4000
-orders_per_hour: 1000
+# Postgres source-table target row counts.
+# The generator enforces a minimum of 50,000 rows for each generated source table.
+
+customer_rows: 100000
+sales_rep_rows: 50000
+advertiser_rows: 50000
+product_rows: 50000
+campaign_rows: 50000
+customer_session_rows: 50000
+order_header_rows: 50000
+sales_activity_rows: 50000
+
+# Kafka event volume.
+session_event_rows: 100000
+
+# Generator behavior.
+duplicate_rate: 0.05
+late_event_rate: 0.08
+late_event_max_minutes: 90
+
+# Compatibility aliases still supported by the generator:
+# customers -> customer_rows
+# orders_per_hour -> order_header_rows
+# events_per_minute -> session_event_rows

@@ -15,6 +15,8 @@ ALLOWED_EVENT_TYPES = (
     "checkout_start",
 )
 
+MIN_SOURCE_TABLE_ROWS = 50_000
+
 
 @dataclass(frozen=True)
 class GeneratorSettings:
@@ -78,20 +80,73 @@ def _float_value(source: dict[str, Any], key: str, default: float) -> float:
     return float(value)
 
 
+def _at_least_minimum(count: int) -> int:
+    return max(MIN_SOURCE_TABLE_ROWS, count)
+
+
+def _int_value_aliases(
+    source: dict[str, Any],
+    keys: tuple[str, ...],
+    default: int,
+    overrides: dict[str, Any] | None = None,
+) -> int:
+    overrides = overrides or {}
+    for key in keys:
+        if overrides.get(key) is not None:
+            return int(overrides[key])
+    for key in keys:
+        if key in source:
+            return int(source[key])
+    return default
+
+
 def load_settings(config_path: str | Path, overrides: dict[str, Any] | None = None) -> GeneratorSettings:
     raw = _read_yaml(config_path)
     overrides = overrides or {}
 
-    customers = int(overrides.get("customers") or _int_value(raw, "customers", 10000))
-    events_per_minute = int(overrides.get("events_per_minute") or _int_value(raw, "events_per_minute", 200))
-    orders_per_hour = int(overrides.get("orders_per_hour") or _int_value(raw, "orders_per_hour", 100))
+    customers = _at_least_minimum(
+        _int_value_aliases(raw, ("customer_rows", "customers"), 10000, overrides=overrides)
+    )
+    events_per_minute = _int_value_aliases(
+        raw,
+        ("session_event_rows", "events_per_minute"),
+        200,
+        overrides=overrides,
+    )
+    orders_per_hour = _at_least_minimum(
+        _int_value_aliases(raw, ("order_header_rows", "orders_per_hour"), 100, overrides=overrides)
+    )
 
-    sales_reps = max(4, min(12, max(1, customers // 2000)))
-    advertisers = max(12, min(80, max(1, customers // 250)))
-    products = max(30, min(250, max(1, customers // 120)))
-    campaigns = max(advertisers, min(200, advertisers * 2))
-    sessions = max(customers // 2, events_per_minute * 3)
-    sales_activities = max(advertisers // 2, orders_per_hour // 4)
+    derived_sales_reps = _at_least_minimum(max(4, min(12, max(1, customers // 2000))))
+    derived_advertisers = _at_least_minimum(max(12, min(80, max(1, customers // 250))))
+    derived_products = _at_least_minimum(max(30, min(250, max(1, customers // 120))))
+    derived_campaigns = _at_least_minimum(max(derived_advertisers, min(200, derived_advertisers * 2)))
+    derived_sessions = _at_least_minimum(max(customers // 2, events_per_minute * 3))
+    derived_sales_activities = _at_least_minimum(max(derived_advertisers // 2, orders_per_hour // 4))
+
+    sales_reps = _at_least_minimum(
+        _int_value_aliases(raw, ("sales_rep_rows", "sales_reps"), derived_sales_reps, overrides=overrides)
+    )
+    advertisers = _at_least_minimum(
+        _int_value_aliases(raw, ("advertiser_rows", "advertisers"), derived_advertisers, overrides=overrides)
+    )
+    products = _at_least_minimum(
+        _int_value_aliases(raw, ("product_rows", "products"), derived_products, overrides=overrides)
+    )
+    campaigns = _at_least_minimum(
+        _int_value_aliases(raw, ("campaign_rows", "campaigns"), derived_campaigns, overrides=overrides)
+    )
+    sessions = _at_least_minimum(
+        _int_value_aliases(raw, ("customer_session_rows", "sessions"), derived_sessions, overrides=overrides)
+    )
+    sales_activities = _at_least_minimum(
+        _int_value_aliases(
+            raw,
+            ("sales_activity_rows", "sales_activities"),
+            derived_sales_activities,
+            overrides=overrides,
+        )
+    )
 
     return GeneratorSettings(
         customers=customers,

@@ -4,10 +4,29 @@ with product_views as (
         customer_token,
         product_id,
         count(*) as product_views
-    from lakehouse.gold.fct_session_events
+    from iceberg.gold.fct_session_events
     where event_type = 'product_view'
       and product_id is not null
     group by 1, 2, 3
+),
+channel_candidates as (
+    select
+        oi.order_id,
+        e.channel,
+        row_number() over (
+            partition by oi.order_id
+            order by
+                case when e.product_id = oi.product_id then 0 else 1 end,
+                date_diff('day', e.event_date, oi.order_date),
+                e.event_ts desc
+        ) as channel_rank
+    from iceberg.gold.fct_order_items as oi
+    left join iceberg.gold.fct_session_events as e
+        on e.customer_token = oi.customer_token
+       and e.event_date <= oi.order_date
+       and e.event_date >= date_add('day', -14, oi.order_date)
+       and (e.product_id = oi.product_id or e.product_id is null)
+       and e.channel is not null
 ),
 orders_with_channel as (
     select
@@ -18,16 +37,10 @@ orders_with_channel as (
         oi.quantity,
         oi.line_amount,
         coalesce(ch.channel, 'unknown') as channel
-    from lakehouse.gold.fct_order_items as oi
-    left join lateral (
-        select e.channel
-        from lakehouse.gold.fct_session_events as e
-        where e.customer_token = oi.customer_token
-          and e.event_date <= oi.order_date
-          and e.channel is not null
-        order by e.event_ts desc
-        limit 1
-    ) as ch on true
+    from iceberg.gold.fct_order_items as oi
+    left join channel_candidates as ch
+        on oi.order_id = ch.order_id
+       and ch.channel_rank = 1
 )
 select
     oi.metric_date,
@@ -41,7 +54,7 @@ select
     count(distinct oi.customer_token) as purchasing_customers,
     coalesce(sum(pv.product_views), 0) as product_views
 from orders_with_channel as oi
-inner join lakehouse.gold.dim_product as dp
+inner join iceberg.gold.dim_product as dp
     on oi.product_id = dp.product_id
 left join product_views as pv
     on oi.metric_date = pv.metric_date

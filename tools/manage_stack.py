@@ -33,6 +33,16 @@ def stack_runtime_services(stack: str) -> list[str]:
     return [service for service in stack_services(stack) if not is_bootstrap_service(service)]
 
 
+def stack_stoppable_runtime_services(stack: str) -> list[str]:
+    preserved = set(STACKS[stack].stop_preserve_services)
+    return [service for service in stack_runtime_services(stack) if service not in preserved]
+
+
+def stack_stoppable_bootstrap_services(stack: str) -> list[str]:
+    preserved = set(STACKS[stack].stop_preserve_services)
+    return [service for service in stack_bootstrap_services(stack) if service not in preserved]
+
+
 def cmd_list() -> int:
     for stack in STACKS.values():
         print(f"{stack.name}: {stack.description}")
@@ -56,8 +66,8 @@ def cmd_up(stack: str) -> int:
 
 
 def cmd_stop(stack: str) -> int:
-    runtime_services = stack_runtime_services(stack)
-    bootstrap_services = stack_bootstrap_services(stack)
+    runtime_services = stack_stoppable_runtime_services(stack)
+    bootstrap_services = stack_stoppable_bootstrap_services(stack)
 
     stop_code = 0
     if runtime_services:

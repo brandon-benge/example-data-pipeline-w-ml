@@ -27,7 +27,7 @@ services:
     networks: [platform]
 
   kafka:
-    image: apache/kafka:4.1.1
+    image: apache/kafka:4.2.0
     container_name: kafka
     environment:
       KAFKA_NODE_ID: 1
@@ -60,7 +60,7 @@ services:
     networks: [platform]
 
   kafka-bootstrap:
-    image: apache/kafka:4.1.1
+    image: apache/kafka:4.2.0
     container_name: kafka-bootstrap
     depends_on:
       kafka:
@@ -126,7 +126,7 @@ services:
       REST_HOST_NAME: kafka-connect-source
       ADVERTISED_HOST_NAME: kafka-connect-source
       CONNECT_PLUGIN_PATH: /kafka/connect
-      KAFKA_HEAP_OPTS: -Xms1g -Xmx2g
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx1g
     ports:
       - "8083:8083"
     mem_limit: 5g
@@ -163,7 +163,7 @@ services:
       REST_HOST_NAME: kafka-connect-sinks
       ADVERTISED_HOST_NAME: kafka-connect-sinks
       CONNECT_PLUGIN_PATH: /kafka/connect
-      KAFKA_HEAP_OPTS: -Xms1g -Xmx2g
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx1g
     ports:
       - "8084:8083"
     mem_limit: 5g
@@ -173,6 +173,8 @@ services:
       timeout: 5s
       retries: 18
     networks: [platform]
+    volumes:
+      - ./config/debezium/connect-log4j.properties:/kafka/config/log4j.properties:ro
 
   kafka-connect-source-bootstrap:
     image: curlimages/curl:8.7.1
@@ -204,7 +206,6 @@ services:
     environment:
       CONNECT_BASE_URL: http://kafka-connect-sinks:8083
       CONNECT_ROLE: sinks
-      CONNECT_SINK_ALLOWLIST: order_header
     entrypoint: ["/bin/sh", "/config/debezium/register-connector.sh"]
     volumes:
       - ./config/debezium:/config/debezium:ro
@@ -261,7 +262,7 @@ services:
       CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
       CATALOG_S3_ENDPOINT: http://minio:9000
       CATALOG_S3_PATH__STYLE__ACCESS: "true"
-      CATALOG_URI: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      CATALOG_URI: ${ICEBERG_CATALOG_URI:-jdbc:postgresql://postgres:5432/${POSTGRES_DB}?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}}
     ports:
       - "8181:8181"
     networks: [platform]
@@ -598,6 +599,9 @@ services:
       MODEL_ARTIFACT_REGION: us-east-1
     ports:
       - "8010:8010"
+    volumes:
+      - ./ml:/app/ml:ro
+      - ./config/features:/app/config/features:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health', timeout=5).read()"]
       interval: 10s
@@ -658,6 +662,7 @@ services:
         sleep infinity
     volumes:
       - ./dbt:/usr/app:rw
+      - ./metadata:/app/metadata:rw
       - ./config/dbt/profiles.yml:/tmp/dbt-profiles/profiles.yml:ro
       - ./config/dbt:/app/bootstrap:ro
       - ./config/spark/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
@@ -696,6 +701,7 @@ services:
     command: ["/bin/sh", "-c", "/bin/sh /app/bootstrap/run-scheduler.sh"]
     volumes:
       - ./dbt:/usr/app:rw
+      - ./metadata:/app/metadata:rw
       - ./config/dbt:/app/bootstrap:ro
       - ./config/dbt/profiles.yml:/tmp/dbt-profiles/profiles.yml:ro
       - ./config/spark/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro

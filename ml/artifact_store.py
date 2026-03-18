@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import os
+from io import BytesIO
 from pathlib import Path
-
-from ml.features import PROJECT_ROOT
 
 
 MODEL_BUCKET = os.getenv("MODEL_ARTIFACT_BUCKET", "ml-artifacts")
@@ -52,14 +51,17 @@ def download_file(uri: str, destination: str | Path) -> Path:
     return destination_path
 
 
+def download_bytes(uri: str) -> bytes:
+    bucket, key = parse_s3_uri(uri)
+    client = _s3_client()
+    buffer = BytesIO()
+    client.download_fileobj(bucket, key, buffer)
+    return buffer.getvalue()
+
+
 def parse_s3_uri(uri: str) -> tuple[str, str]:
     if not uri.startswith("s3://"):
         raise ValueError(f"Unsupported artifact uri: {uri}")
     bucket_and_key = uri[5:]
     bucket, key = bucket_and_key.split("/", 1)
     return bucket, key
-
-
-def cache_path(uri: str) -> Path:
-    _, key = parse_s3_uri(uri)
-    return PROJECT_ROOT / ".cache" / "model_artifacts" / key

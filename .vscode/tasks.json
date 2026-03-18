@@ -2,7 +2,52 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "platform: up",
+      "label": "pipeline: run to ingestion",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh --stop-at ingestion",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "pipeline: run to stream-processing",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh --stop-at stream-processing",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "pipeline: run to batch",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh --stop-at batch",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "pipeline: run to analytics",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh --stop-at analytics",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "pipeline: run to ml",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh --stop-at ml",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "compose: up -d",
       "type": "shell",
       "command": "docker compose up -d",
       "options": {
@@ -11,7 +56,7 @@
       "problemMatcher": []
     },
     {
-      "label": "platform: down",
+      "label": "compose: down",
       "type": "shell",
       "command": "docker compose down",
       "options": {
@@ -20,396 +65,9 @@
       "problemMatcher": []
     },
     {
-      "label": "platform: reset",
+      "label": "compose: down -v",
       "type": "shell",
-      "command": "docker compose down -v",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "stack: list",
-      "type": "shell",
-      "command": "python3 tools/manage_stack.py list",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "stack: up streaming",
-      "type": "shell",
-      "command": "python3 tools/manage_stack.py up streaming",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "stack: stop streaming",
-      "type": "shell",
-      "command": "python3 tools/manage_stack.py stop streaming",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "stack: up batch",
-      "type": "shell",
-      "command": "python3 tools/manage_stack.py up batch",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "stack: stop batch",
-      "type": "shell",
-      "command": "python3 tools/manage_stack.py stop batch",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "stack: up analytics",
-      "type": "shell",
-      "command": "python3 tools/manage_stack.py up analytics",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "stack: stop analytics",
-      "type": "shell",
-      "command": "python3 tools/manage_stack.py stop analytics",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "stack: up ml",
-      "type": "shell",
-      "command": "python3 tools/manage_stack.py up ml",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "stack: stop ml",
-      "type": "shell",
-      "command": "python3 tools/manage_stack.py stop ml",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "platform: logs kafka-bootstrap",
-      "type": "shell",
-      "command": "docker compose logs kafka-bootstrap",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "platform: logs superset-bootstrap",
-      "type": "shell",
-      "command": "docker compose logs superset-bootstrap",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "platform: rerun kafka-bootstrap",
-      "type": "shell",
-      "command": "docker compose up kafka-bootstrap",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "generator: run both",
-      "type": "shell",
-      "command": "source .venv/bin/activate && python3 generator/app.py --config params.yaml --mode both",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "ml: materialize feature tables",
-      "type": "shell",
-      "command": "docker compose exec dbt dbt build --select features",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "ml: train all",
-      "type": "shell",
-      "command": "docker compose up ml-training",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "ml: training logs",
-      "type": "shell",
-      "command": "docker compose logs -f ml-training",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "ml: inference customer",
-      "type": "shell",
-      "command": "curl -X POST http://localhost:8010/score/customer_purchase -H 'Content-Type: application/json' -d '{\"customer_id\": 123, \"write_redis\": true}'",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "ml: inference campaign",
-      "type": "shell",
-      "command": "curl -X POST http://localhost:8010/score/campaign_success -H 'Content-Type: application/json' -d '{\"campaign_id\": 456, \"write_redis\": true}'",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "ml: inference advertiser",
-      "type": "shell",
-      "command": "curl -X POST http://localhost:8010/score/advertiser_budget_expansion -H 'Content-Type: application/json' -d '{\"advertiser_id\": 789, \"write_redis\": true}'",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "ml: inference health",
-      "type": "shell",
-      "command": "curl http://localhost:8010/health",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "dbt: debug",
-      "type": "shell",
-      "command": "docker compose exec dbt dbt debug",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "dbt: logs scheduler",
-      "type": "shell",
-      "command": "docker compose logs dbt-scheduler",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "dbt: logs scheduler follow",
-      "type": "shell",
-      "command": "docker compose logs -f dbt-scheduler",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "dbt: run",
-      "type": "shell",
-      "command": "docker compose exec dbt dbt run",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "dbt: test",
-      "type": "shell",
-      "command": "docker compose exec dbt dbt test",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "dbt: build",
-      "type": "shell",
-      "command": "docker compose exec dbt dbt build",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "dbt: build staging",
-      "type": "shell",
-      "command": "docker compose exec dbt dbt build --select path:models/staging",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "dbt: build dimensions and facts",
-      "type": "shell",
-      "command": "docker compose exec dbt dbt build --select path:models/marts/dimensions path:models/marts/facts",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "dbt: build marts",
-      "type": "shell",
-      "command": "docker compose exec dbt dbt build --select path:models/marts/marts",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "dbt: build semantic",
-      "type": "shell",
-      "command": "docker compose exec dbt dbt build --select path:models/semantic",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: full pipeline",
-      "type": "shell",
-      "command": "python3 tools/validate_pipeline.py",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: streaming stack",
-      "type": "shell",
-      "command": "python3 tools/validate_pipeline.py --stack streaming",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: batch stack",
-      "type": "shell",
-      "command": "python3 tools/validate_pipeline.py --stack batch",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: analytics stack",
-      "type": "shell",
-      "command": "python3 tools/validate_pipeline.py --stack analytics",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: ml stack",
-      "type": "shell",
-      "command": "python3 tools/validate_pipeline.py --stack ml",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: kafka-connect source connector status",
-      "type": "shell",
-      "command": "curl http://localhost:8083/connectors/postgres-cdc-connector/status",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: schema registry subjects",
-      "type": "shell",
-      "command": "curl http://localhost:8081/subjects",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: trino health",
-      "type": "shell",
-      "command": "curl http://localhost:8080/v1/info",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: minio health",
-      "type": "shell",
-      "command": "curl http://localhost:9000/minio/health/live",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: superset health",
-      "type": "shell",
-      "command": "curl http://localhost:8088/health",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: kafka topics",
-      "type": "shell",
-      "command": "docker compose exec kafka /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: redis customer feature",
-      "type": "shell",
-      "command": "docker compose exec redis redis-cli HGETALL features:customer:123:v1",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "validate: redis customer ttl",
-      "type": "shell",
-      "command": "docker compose exec redis redis-cli TTL features:customer:123:v1",
+      "command": "docker compose down -v --remove-orphans && docker volume prune -f && bash tools/reset_local_state.sh",
       "options": {
         "cwd": "${workspaceFolder}"
       },

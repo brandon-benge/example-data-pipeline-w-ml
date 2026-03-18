@@ -1225,7 +1225,7 @@ Spark performs:
 
 ML training reads dbt-built feature tables in `iceberg.silver`.
 
-Model artifacts are cached under `ml/artifacts/`, published to the MinIO `ml-artifacts` bucket, versioned in `iceberg.silver.ml_model_registry`, and served by the compose-managed `ml-inference` container.
+Training writes local artifacts under `ml/artifacts/`, publishes canonical copies to the MinIO `ml-artifacts` bucket, and versions model metadata in `iceberg.silver.ml_model_registry`. The compose-managed `ml-inference` container resolves the latest manifest from the model registry and downloads the manifest and model from MinIO in memory at runtime.
 
 The platform supports one shared feature platform with multiple downstream model artifacts and multiple scoring outputs:
 - shared offline feature definitions in `config/features/offline_feature_defs.yaml`
@@ -1384,7 +1384,7 @@ Current local scoring pattern
 - model binary
 - metrics JSON
 - feature definition version
-- cached under `ml/artifacts/`, published to MinIO, and versioned in `iceberg.silver.ml_model_registry`
+- written locally under `ml/artifacts/` during training, published canonically to MinIO, and versioned in `iceberg.silver.ml_model_registry`
 
 #### Example scoring outputs
 - `customer_purchase_propensity`
@@ -1466,41 +1466,69 @@ example-data-pipeline-w-ml/
 ├── config/
 │   ├── postgres/
 │   │   └── init.sql
-│   ├── debezium/  # Kafka Connect connector configs and bootstrap assets
+│   ├── debezium/
+│   │   ├── Dockerfile
+│   │   ├── connect-log4j.properties
 │   │   ├── connector-postgres.json
-│   │   └── connector-iceberg-sink.json
+│   │   ├── connector-postgres.config.json
+│   │   ├── connector-iceberg-sink.json
+│   │   ├── connector-iceberg-sink.config.json
+│   │   └── register-connector.sh
 │   ├── kafka/
+│   │   ├── bootstrap-topics.sh
 │   │   └── topics/
 │   │       ├── cdc.customer.env
 │   │       ├── cdc.order_header.env
 │   │       ├── events.session_event.env
 │   │       └── dlq.events.session_event_schema.env
 │   ├── schema-registry/
+│   │   ├── register-subjects.sh
 │   │   └── subjects/
 │   │       ├── events.session_event-key.json
 │   │       └── events.session_event-value.json
 │   ├── iceberg/
+│   │   ├── bootstrap-cdc-rest-catalog.sh
+│   │   ├── bootstrap-cdc-rest-catalog.sql
+│   │   ├── bootstrap-warehouse.sh
 │   │   └── catalog.properties
 │   ├── trino/
 │   │   ├── config.properties
+│   │   ├── jvm.config
 │   │   └── catalog/
 │   │       └── iceberg.properties
 │   ├── spark/
-│   │   └── spark-defaults.conf
+│   │   ├── download-jars.sh
+│   │   ├── run-jobs.sh
+│   │   ├── spark-defaults.conf
+│   │   └── start-scheduler.sh
 │   ├── redis/
 │   │   └── redis.conf
 │   ├── features/
 │   │   ├── online_feature_defs.yaml
 │   │   └── offline_feature_defs.yaml
 │   ├── flink/
-│   │   └── flink-conf.yaml
+│   │   ├── Dockerfile
+│   │   ├── download-jars.sh
+│   │   ├── flink-conf.yaml
+│   │   ├── start-flink.sh
+│   │   └── submit-jobs.sh
 │   ├── dbt/
-│   │   └── profiles.yml
+│   │   ├── bootstrap.sh
+│   │   ├── export_metadata.py
+│   │   ├── profiles.yml
+│   │   └── run-scheduler.sh
+│   ├── inference/
+│   │   └── Dockerfile
+│   ├── ml-training/
+│   │   ├── Dockerfile
+│   │   └── train-models.sh
 │   ├── superset/
 │   │   ├── superset_config.py
 │   │   └── bootstrap/
+│   │       ├── bootstrap_python.sh
 │   │       ├── init_superset.sh
-│   │       └── import_dashboards.sh
+│   │       ├── register_trino_connection.py
+│   │       └── sync_bi_assets.py
 │   └── governance/
 │       ├── classification.yaml
 │       ├── ownership.yaml
@@ -1559,15 +1587,27 @@ example-data-pipeline-w-ml/
 │   ├── queries/
 │   └── charts/
 ├── ml/
+│   ├── __init__.py
+│   ├── artifact_store.py
 │   ├── train.py
 │   ├── features.py
 │   ├── labels.py
 │   ├── evaluate.py
-│   ├── trino_utils.py
+│   ├── inference.py
+│   ├── inference_api.py
+│   ├── scoring.py
 │   ├── online_store.py
+│   ├── trino_utils.py
 │   └── artifacts/
-├── scripts/
-│   └── demo_realtime_scoring.py
+├── tools/
+│   ├── PrintDebeziumTransform.java
+│   ├── demo_realtime_scoring.py
+│   ├── manage_stack.py
+│   ├── platform_stacks.py
+│   ├── print_debezium_transform.sh
+│   ├── reset_local_state.sh
+│   ├── run_stack_workflow.sh
+│   └── validate_pipeline.py
 ├── metadata/
 │   ├── table_contracts/
 │   ├── lineage/

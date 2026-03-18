@@ -193,7 +193,7 @@ In this example project, **logistic regression models** are trained for three op
 
 Model artifacts are stored in **MinIO**, while model version metadata is written to an Iceberg table:
 
-`lakehouse.silver.ml_model_registry`
+`iceberg.silver.ml_model_registry`
 
 This registry provides version tracking, reproducibility, and auditability for deployed models.
 

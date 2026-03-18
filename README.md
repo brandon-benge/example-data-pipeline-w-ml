@@ -4,19 +4,21 @@ Architecture overview:
 
 ![Platform Architecture](./docs/image.png)
 
-This repository demonstrates how a modern data platform can support **real-time ML decisions** using streaming pipelines, a lakehouse architecture, and an inference service.
+This repository demonstrates how a modern data platform can support real-time ML decisions using streaming pipelines, a lakehouse architecture, and an inference service.
 
-📖 **Blog walkthrough**  
-Full architecture explanation and design discussion:  
+Blog walkthrough:
+
+Full architecture explanation and design discussion:
 https://github.com/brandon-benge/example-data-pipeline-w-ml/blob/main/docs/blog.md
 
-📐 **Detailed architecture specification**  
-See the full architecture definition here:  
+Detailed architecture specification:
+
+See the full architecture definition here:
 https://github.com/brandon-benge/example-data-pipeline-w-ml/blob/main/ARCHITECTURE.md
 
 ## Platform Overview
 
-This repository contains a **local laptop-scale end-to-end platform** that demonstrates how streaming, batch processing, analytics, and ML inference systems can work together to produce real operational decisions.
+This repository contains a local laptop-scale end-to-end platform that demonstrates how streaming, batch processing, analytics, and ML inference systems can work together to produce real operational decisions.
 
 Key components include:
 
@@ -26,7 +28,7 @@ Key components include:
 - Silver, governance, and offline feature parity logic in Spark
 - Gold dimensions, facts, marts, and semantic views in dbt
 - Trino and Superset for curated BI access
-- local ML training code plus a containerized inference service that reads dbt-built Iceberg feature tables and publishes artifacts to MinIO-backed object storage
+- local ML training code that publishes artifacts to MinIO-backed object storage plus a containerized inference service that reads governed features and serves request-time predictions
 
 ## Architecture Layers
 
@@ -57,6 +59,15 @@ Flink streaming job submission and Spark batch job execution are also started th
 The REST-catalog namespaces and Bronze CDC table DDL are also initialized by a dedicated one-shot bootstrap service before the per-table Kafka Connect Iceberg sinks are registered. The Debezium source connector and the Iceberg sink connectors run on separate Kafka Connect workers in local mode.
 
 For local simplicity, the Iceberg REST catalog now uses the existing Postgres service as its JDBC metadata backend. That shared database is a demo shortcut. In a more realistic deployment, source application tables, Iceberg catalog metadata, Superset metadata, and any other control-plane state should live in separate databases.
+
+For backend A/B testing, you can override the Iceberg REST catalog JDBC URI before recreating dependent services:
+
+```bash
+export ICEBERG_CATALOG_URI='jdbc:sqlite:/tmp/iceberg_rest_mode.db'
+docker compose up -d --force-recreate iceberg-rest trino kafka-connect-sinks kafka-connect-sinks-bootstrap
+```
+
+Unset `ICEBERG_CATALOG_URI` to return to the default Postgres-backed catalog.
 
 ## Synthetic data generation
 
@@ -122,7 +133,8 @@ The ML layer is intentionally lightweight and local-demo-friendly:
 - training features are assembled only from Silver-derived feature dataset snapshots
 - example feature groups are supported for customer, campaign, and advertiser use cases
 - example labels are supported for `customer_purchase_next_7d`, `campaign_success_flag`, and `advertiser_budget_increase_next_30d`
-- model artifacts are cached under [ml/artifacts/](./ml/artifacts), published to MinIO, and versioned in an Iceberg model registry table
+- training writes local artifacts under [ml/artifacts/](./ml/artifacts), publishes canonical copies to MinIO, and records model metadata in `iceberg.silver.ml_model_registry`
+- the runtime inference service queries `iceberg.silver.ml_model_registry` for the latest manifest and downloads the manifest and model from MinIO in memory at request time
 
 ## Tests
 

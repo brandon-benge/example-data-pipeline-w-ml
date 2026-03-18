@@ -6,7 +6,7 @@ with daily_funnel as (
         sum(add_to_cart) as add_to_cart,
         sum(checkout_starts) as checkout_starts,
         sum(purchases) as purchases
-    from lakehouse.gold.mart_customer_conversion
+    from iceberg.gold.mart_customer_conversion
     group by 1
 )
 select metric_date, 'views' as stage_name, views as stage_total from daily_funnel

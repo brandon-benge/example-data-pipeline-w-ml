@@ -1,0 +1,91 @@
+terms:
+  - term: customer
+    definition: A person or account that can browse sessions and place orders in the commerce workflow.
+    synonyms: [buyer, shopper]
+    related_datasets:
+      - iceberg.silver.silver_customer_current
+      - iceberg.gold.dim_customer
+      - iceberg.gold.mart_customer_conversion
+  - term: customer_token
+    definition: A privacy-preserving tokenized identifier derived from the raw customer identifier for Gold and ML use.
+    synonyms: [customer surrogate key, masked customer key]
+    related_datasets:
+      - iceberg.gold.dim_customer
+      - iceberg.gold.fct_orders
+      - iceberg.gold.fct_session_events
+  - term: session
+    definition: A bounded user interaction window with a start time and an optional end time.
+    synonyms: [visit]
+    related_datasets:
+      - iceberg.silver.silver_customer_session
+      - iceberg.gold.fct_session_events
+  - term: session event
+    definition: A tracked behavioral action within a session such as product view, ad impression, ad click, add to cart, or checkout start.
+    synonyms: [behavior event, clickstream event]
+    related_datasets:
+      - iceberg.bronze.bronze_session_event_raw
+      - iceberg.silver.silver_session_event_clean
+      - iceberg.gold.fct_session_events
+  - term: order
+    definition: A commercial purchase transaction represented by an order header and one or more order items.
+    synonyms: [purchase, transaction]
+    related_datasets:
+      - iceberg.silver.silver_order_header
+      - iceberg.gold.fct_orders
+  - term: order item
+    definition: An individual product line within an order, including quantity, unit price, and attributed revenue.
+    synonyms: [line item]
+    related_datasets:
+      - iceberg.silver.silver_order_item
+      - iceberg.gold.fct_order_items
+  - term: attributed campaign
+    definition: The marketing campaign credited for influencing an order item or downstream revenue outcome.
+    synonyms: [credited campaign]
+    related_datasets:
+      - iceberg.silver.silver_order_item
+      - iceberg.gold.fct_campaign_daily
+      - iceberg.gold.mart_campaign_performance
+  - term: attributed revenue
+    definition: Revenue assigned to a campaign or advertiser based on attributed order items.
+    synonyms: [credited revenue]
+    related_datasets:
+      - iceberg.silver.silver_campaign_daily_metrics
+      - iceberg.gold.fct_campaign_daily
+      - iceberg.gold.mart_campaign_performance
+  - term: ctr
+    definition: Click-through rate, computed as clicks divided by impressions.
+    synonyms: [click through rate]
+    related_datasets:
+      - iceberg.gold.mart_campaign_performance
+      - iceberg.gold.mart_advertiser_engagement
+  - term: conversion rate
+    definition: A funnel ratio measuring how often a user progresses from an earlier interaction stage to a purchase.
+    synonyms: [purchase conversion]
+    related_datasets:
+      - iceberg.gold.mart_customer_conversion
+  - term: active campaign
+    definition: A campaign whose metric date falls within its configured start and end dates.
+    synonyms: [running campaign]
+    related_datasets:
+      - iceberg.silver.silver_campaign_current
+      - iceberg.silver.silver_advertiser_daily_metrics
+      - iceberg.gold.mart_advertiser_engagement
+  - term: feature parity
+    definition: A consistency check between batch-derived feature logic and online-style feature logic over the same business concept.
+    synonyms: [offline online parity]
+    related_datasets:
+      - iceberg.silver.customer_realtime_features_v1_parity
+      - iceberg.silver.customer_purchase_realtime_features_v1
+  - term: purchase propensity feature
+    definition: A model-ready feature set describing recent customer behavior and order activity for predicting future purchases.
+    synonyms: [customer purchase feature]
+    related_datasets:
+      - iceberg.silver.customer_purchase_features_v1
+      - iceberg.silver.customer_purchase_realtime_features_v1
+  - term: certification tier
+    definition: A governance label indicating how ready a dataset is for broader analytical use.
+    synonyms: [data product maturity]
+    related_datasets:
+      - iceberg.gold.dim_customer
+      - iceberg.gold.fct_orders
+      - iceberg.gold.mart_campaign_performance

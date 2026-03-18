@@ -11,9 +11,15 @@ __pycache__/
 
 # Runtime logs and local outputs
 dbt/logs/
+dbt/target/
 ml/artifacts/
 state/flink/checkpoints/
 state/flink/savepoints/
+metadata/lineage/*.jsonl
+metadata/lineage/latest_runs.json
+metadata/table_contracts/dq_results.jsonl
+metadata/table_contracts/dbt_test_results.jsonl
+metadata/table_contracts/latest_results.json
 
 # Downloaded engine dependencies
 spark/jars/*.jar

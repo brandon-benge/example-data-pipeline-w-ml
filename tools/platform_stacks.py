@@ -12,6 +12,7 @@ class StackDefinition:
     validation_services: tuple[str, ...]
     validation_http_endpoints: tuple[str, ...]
     validation_trino_checks: tuple[str, ...] = ()
+    stop_preserve_services: tuple[str, ...] = ()
 
 
 STACKS: dict[str, StackDefinition] = {
@@ -35,6 +36,13 @@ STACKS: dict[str, StackDefinition] = {
             "kafka-connect-source",
         ),
         validation_http_endpoints=("schema_registry", "kafka_connect_source"),
+        stop_preserve_services=(
+            "postgres",
+            "kafka",
+            "kafka-bootstrap",
+            "schema-registry",
+            "schema-registry-bootstrap",
+        ),
     ),
     "stream-processing": StackDefinition(
         name="stream-processing",
@@ -86,6 +94,14 @@ STACKS: dict[str, StackDefinition] = {
             "bronze_order_item_cdc",
             "bronze_sales_activity_cdc",
             "bronze_session_event_raw",
+        ),
+        stop_preserve_services=(
+            "postgres",
+            "minio",
+            "minio-bootstrap",
+            "iceberg-rest",
+            "trino",
+            "metadata",
         ),
     ),
     "streaming": StackDefinition(
@@ -142,6 +158,16 @@ STACKS: dict[str, StackDefinition] = {
             "bronze_sales_activity_cdc",
             "bronze_session_event_raw",
         ),
+        stop_preserve_services=(
+            "postgres",
+            "kafka",
+            "kafka-bootstrap",
+            "schema-registry",
+            "schema-registry-bootstrap",
+            "minio",
+            "iceberg-rest",
+            "trino",
+        ),
     ),
     "batch": StackDefinition(
         name="batch",
@@ -177,6 +203,14 @@ STACKS: dict[str, StackDefinition] = {
             "ml_campaign_success_features_v1",
             "ml_advertiser_budget_features_v1",
         ),
+        stop_preserve_services=(
+            "postgres",
+            "minio",
+            "minio-bootstrap",
+            "iceberg-rest",
+            "trino",
+            "metadata",
+        ),
     ),
     "analytics": StackDefinition(
         name="analytics",
@@ -201,6 +235,14 @@ STACKS: dict[str, StackDefinition] = {
             "gold_mart_customer_conversion",
             "gold_mart_campaign_performance",
         ),
+        stop_preserve_services=(
+            "postgres",
+            "minio",
+            "minio-bootstrap",
+            "iceberg-rest",
+            "trino",
+            "metadata",
+        ),
     ),
     "ml": StackDefinition(
         name="ml",
@@ -219,6 +261,13 @@ STACKS: dict[str, StackDefinition] = {
         validation_sections=("services", "http", "metadata", "ml"),
         validation_services=("postgres", "minio", "iceberg-rest", "trino", "redis", "ml-inference", "metadata"),
         validation_http_endpoints=("minio", "iceberg_rest", "trino", "ml_inference", "metadata"),
+        stop_preserve_services=(
+            "postgres",
+            "minio",
+            "iceberg-rest",
+            "trino",
+            "metadata",
+        ),
     ),
 }
 

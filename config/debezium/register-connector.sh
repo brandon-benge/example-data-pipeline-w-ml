@@ -12,7 +12,7 @@ advertiser|postgres-cdc-advertiser-iceberg-sink|cdc.advertiser|bronze.bronze_adv
 product|postgres-cdc-product-iceberg-sink|cdc.product|bronze.bronze_product_cdc|connect-iceberg-control-product-v1
 campaign|postgres-cdc-campaign-iceberg-sink|cdc.campaign|bronze.bronze_campaign_cdc|connect-iceberg-control-campaign-v1
 campaign_product|postgres-cdc-campaign-product-iceberg-sink|cdc.campaign_product|bronze.bronze_campaign_product_cdc|connect-iceberg-control-campaign-product-v1
-customer_session|postgres-cdc-customer-session-iceberg-sink|cdc.customer_session|bronze.bronze_customer_session_cdc|connect-iceberg-control-customer-session-v1
+customer_session|postgres-cdc-customer-session-iceberg-sink|cdc.customer_session|bronze.bronze_customer_session_cdc|connect-iceberg-control-customer-session-v2
 order_header|postgres-cdc-order-header-iceberg-sink|cdc.order_header|bronze.bronze_order_header_cdc|connect-iceberg-control-order-header-v1
 order_item|postgres-cdc-order-item-iceberg-sink|cdc.order_item|bronze.bronze_order_item_cdc|connect-iceberg-control-order-item-v1
 sales_activity|postgres-cdc-sales-activity-iceberg-sink|cdc.sales_activity|bronze.bronze_sales_activity_cdc|connect-iceberg-control-sales-activity-v1
@@ -22,10 +22,20 @@ EOF
 register_connector() {
   name="$1"
   create_payload="$2"
+  config_payload="${3:-}"
   connector_url="$CONNECT_BASE_URL/connectors/$name"
+  config_url="$connector_url/config"
 
   if curl -fsS "$connector_url" >/dev/null 2>&1; then
-    echo "Connector already registered, leaving unchanged: $name"
+    if [ -n "$config_payload" ]; then
+      curl -fsS -X PUT \
+        -H "Content-Type: application/json" \
+        --data @"$config_payload" \
+        "$config_url" >/dev/null
+      echo "Connector updated: $name"
+    else
+      echo "Connector already registered, leaving unchanged: $name"
+    fi
   else
     curl -fsS -X POST \
       -H "Content-Type: application/json" \
@@ -50,43 +60,68 @@ register_cdc_sink_connector() {
   target_table="$3"
   control_topic="$4"
   payload_file="$(mktemp)"
+  config_file="$(mktemp)"
+  extra_config_file="$(mktemp)"
+
+  : >"$extra_config_file"
+  if [ "$connector_name" = "postgres-cdc-customer-session-iceberg-sink" ] || [ "$connector_name" = "postgres-cdc-order-header-iceberg-sink" ]; then
+    cat >"$extra_config_file" <<EOF
+  ,"iceberg.control.commit.interval-ms": "15000"
+  ,"iceberg.control.commit.timeout-ms": "300000"
+EOF
+  fi
+
+  cat >"$config_file" <<EOF
+{
+  "connector.class": "org.apache.iceberg.connect.IcebergSinkConnector",
+  "tasks.max": "1",
+  "topics": "$source_topic",
+  "consumer.override.auto.offset.reset": "earliest",
+  "consumer.override.max.poll.records": "500",
+  "consumer.override.max.poll.interval.ms": "900000",
+  "consumer.override.session.timeout.ms": "90000",
+  "consumer.override.heartbeat.interval.ms": "15000",
+  "consumer.override.max.partition.fetch.bytes": "1048576",
+  "errors.tolerance": "all",
+  "errors.log.enable": "true",
+  "errors.log.include.messages": "true",
+  "errors.deadletterqueue.topic.name": "${source_topic}.dlq",
+  "errors.deadletterqueue.topic.replication.factor": "1",
+  "errors.deadletterqueue.context.headers.enable": "true",
+  "iceberg.catalog.type": "rest",
+  "iceberg.catalog.uri": "http://iceberg-rest:8181",
+  "iceberg.catalog.warehouse": "s3://warehouse/",
+  "iceberg.catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
+  "iceberg.catalog.s3.endpoint": "http://minio:9000",
+  "iceberg.catalog.s3.path-style-access": "true",
+  "iceberg.catalog.s3.access-key-id": "minio",
+  "iceberg.catalog.s3.secret-access-key": "minio123",
+  "iceberg.tables": "$target_table",
+  "iceberg.tables.auto-create-enabled": "false",
+  "iceberg.control.topic": "$control_topic",
+  "iceberg.control.commit.timeout-ms": "180000",
+  "iceberg.control.commit.interval-ms": "5000",
+  "transforms": "cdc,kafkaMeta",
+  "transforms.cdc.type": "org.apache.iceberg.connect.transforms.DebeziumTransform",
+  "transforms.cdc.cdc.target.pattern": "$target_table",
+  "transforms.kafkaMeta.type": "org.apache.iceberg.connect.transforms.KafkaMetadataTransform",
+  "transforms.kafkaMeta.nested": "false",
+  "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "key.converter.schemas.enable": "true",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "true"$(cat "$extra_config_file")
+}
+EOF
 
   cat >"$payload_file" <<EOF
 {
   "name": "$connector_name",
-  "config": {
-    "connector.class": "org.apache.iceberg.connect.IcebergSinkConnector",
-    "tasks.max": "1",
-    "topics": "$source_topic",
-    "consumer.override.auto.offset.reset": "earliest",
-    "iceberg.catalog.type": "rest",
-    "iceberg.catalog.uri": "http://iceberg-rest:8181",
-    "iceberg.catalog.warehouse": "s3://warehouse/",
-    "iceberg.catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
-    "iceberg.catalog.s3.endpoint": "http://minio:9000",
-    "iceberg.catalog.s3.path-style-access": "true",
-    "iceberg.catalog.s3.access-key-id": "minio",
-    "iceberg.catalog.s3.secret-access-key": "minio123",
-    "iceberg.tables": "$target_table",
-    "iceberg.tables.auto-create-enabled": "false",
-    "iceberg.control.topic": "$control_topic",
-    "iceberg.control.commit.timeout-ms": "180000",
-    "iceberg.control.commit.interval-ms": "60000",
-    "transforms": "cdc,kafkaMeta",
-    "transforms.cdc.type": "org.apache.iceberg.connect.transforms.DebeziumTransform",
-    "transforms.cdc.cdc.target.pattern": "$target_table",
-    "transforms.kafkaMeta.type": "org.apache.iceberg.connect.transforms.KafkaMetadataTransform",
-    "transforms.kafkaMeta.nested": "false",
-    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
-    "key.converter.schemas.enable": "true",
-    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
-    "value.converter.schemas.enable": "true"
-  }
+  "config": $(cat "$config_file")
 }
 EOF
 
-  register_connector "$connector_name" "$payload_file"
-  rm -f "$payload_file"
+  register_connector "$connector_name" "$payload_file" "$config_file"
+  rm -f "$payload_file" "$config_file" "$extra_config_file"
 }
 
 slug_allowed() {

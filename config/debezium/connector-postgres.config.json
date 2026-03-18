@@ -17,7 +17,7 @@
   "transforms.route.replacement": "cdc.$1",
   "tombstones.on.delete": "true",
   "provide.transaction.metadata": "true",
-  "decimal.handling.mode": "string",
+  "decimal.handling.mode": "precise",
   "time.precision.mode": "connect",
   "snapshot.fetch.size": "2000",
   "max.batch.size": "2048",

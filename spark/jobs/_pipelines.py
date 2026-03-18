@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from time import monotonic
+from uuid import uuid4
+
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
@@ -42,6 +45,35 @@ def _enrich_metadata(df: DataFrame, dataset_name: str) -> DataFrame:
     )
 
 
+def _new_run_id(job_name: str) -> str:
+    return f"{job_name}-{uuid4().hex[:12]}"
+
+
+def _write_with_lineage(
+    df: DataFrame,
+    table_name: str,
+    *,
+    job_name: str,
+    upstream_datasets: list[str],
+    run_id: str,
+    mode: str = "overwrite",
+) -> int:
+    started_at = monotonic()
+    row_count = df.count()
+    write_table(df, table_name, mode=mode)
+    record_lineage(
+        job_name,
+        upstream_datasets,
+        table_name,
+        run_id=run_id,
+        row_count=row_count,
+        duration_ms=int((monotonic() - started_at) * 1000),
+        write_mode=mode,
+        metadata={"writer": "spark"},
+    )
+    return row_count
+
+
 def run_dimensions(
     start_date: str | None = None,
     end_date: str | None = None,
@@ -49,6 +81,7 @@ def run_dimensions(
 ) -> None:
     managed_spark = spark is None
     spark = _initialize_spark("bronze-to-silver-dimensions", spark=spark)
+    run_id = _new_run_id("bronze_to_silver_dimensions")
     silver_processed_ts = F.current_timestamp()
 
     def current_df(bronze_table: str, business_key: str) -> DataFrame:
@@ -68,8 +101,13 @@ def run_dimensions(
         silver_processed_ts.alias("silver_processed_ts"),
     )
     sales_rep = _enrich_metadata(sales_rep, "iceberg.silver.silver_sales_rep_current")
-    write_table(sales_rep, "iceberg.silver.silver_sales_rep_current")
-    record_lineage("bronze_to_silver_dimensions", ["iceberg.bronze.bronze_sales_rep_cdc"], "iceberg.silver.silver_sales_rep_current")
+    _write_with_lineage(
+        sales_rep,
+        "iceberg.silver.silver_sales_rep_current",
+        job_name="bronze_to_silver_dimensions",
+        upstream_datasets=["iceberg.bronze.bronze_sales_rep_cdc"],
+        run_id=run_id,
+    )
 
     customer = current_df("bronze_customer_cdc", "customer_id").select(
         F.col("payload_customer_id").alias("customer_id"),
@@ -87,8 +125,13 @@ def run_dimensions(
         silver_processed_ts.alias("silver_processed_ts"),
     )
     customer = _enrich_metadata(customer, "iceberg.silver.silver_customer_current")
-    write_table(customer, "iceberg.silver.silver_customer_current")
-    record_lineage("bronze_to_silver_dimensions", ["iceberg.bronze.bronze_customer_cdc"], "iceberg.silver.silver_customer_current")
+    _write_with_lineage(
+        customer,
+        "iceberg.silver.silver_customer_current",
+        job_name="bronze_to_silver_dimensions",
+        upstream_datasets=["iceberg.bronze.bronze_customer_cdc"],
+        run_id=run_id,
+    )
 
     advertiser = current_df("bronze_advertiser_cdc", "advertiser_id").select(
         F.col("payload_advertiser_id").alias("advertiser_id"),
@@ -104,8 +147,13 @@ def run_dimensions(
         silver_processed_ts.alias("silver_processed_ts"),
     )
     advertiser = _enrich_metadata(advertiser, "iceberg.silver.silver_advertiser_current")
-    write_table(advertiser, "iceberg.silver.silver_advertiser_current")
-    record_lineage("bronze_to_silver_dimensions", ["iceberg.bronze.bronze_advertiser_cdc"], "iceberg.silver.silver_advertiser_current")
+    _write_with_lineage(
+        advertiser,
+        "iceberg.silver.silver_advertiser_current",
+        job_name="bronze_to_silver_dimensions",
+        upstream_datasets=["iceberg.bronze.bronze_advertiser_cdc"],
+        run_id=run_id,
+    )
 
     product = current_df("bronze_product_cdc", "product_id").select(
         F.col("payload_product_id").alias("product_id"),
@@ -123,8 +171,13 @@ def run_dimensions(
         silver_processed_ts.alias("silver_processed_ts"),
     )
     product = _enrich_metadata(product, "iceberg.silver.silver_product_current")
-    write_table(product, "iceberg.silver.silver_product_current")
-    record_lineage("bronze_to_silver_dimensions", ["iceberg.bronze.bronze_product_cdc"], "iceberg.silver.silver_product_current")
+    _write_with_lineage(
+        product,
+        "iceberg.silver.silver_product_current",
+        job_name="bronze_to_silver_dimensions",
+        upstream_datasets=["iceberg.bronze.bronze_product_cdc"],
+        run_id=run_id,
+    )
 
     campaign = current_df("bronze_campaign_cdc", "campaign_id").select(
         F.col("payload_campaign_id").alias("campaign_id"),
@@ -142,8 +195,13 @@ def run_dimensions(
         silver_processed_ts.alias("silver_processed_ts"),
     )
     campaign = _enrich_metadata(campaign, "iceberg.silver.silver_campaign_current")
-    write_table(campaign, "iceberg.silver.silver_campaign_current")
-    record_lineage("bronze_to_silver_dimensions", ["iceberg.bronze.bronze_campaign_cdc"], "iceberg.silver.silver_campaign_current")
+    _write_with_lineage(
+        campaign,
+        "iceberg.silver.silver_campaign_current",
+        job_name="bronze_to_silver_dimensions",
+        upstream_datasets=["iceberg.bronze.bronze_campaign_cdc"],
+        run_id=run_id,
+    )
 
     campaign_product = current_df("bronze_campaign_product_cdc", "campaign_product_id").select(
         F.col("payload_campaign_product_id").alias("campaign_product_id"),
@@ -157,11 +215,12 @@ def run_dimensions(
         silver_processed_ts.alias("silver_processed_ts"),
     )
     campaign_product = _enrich_metadata(campaign_product, "iceberg.silver.silver_campaign_product_current")
-    write_table(campaign_product, "iceberg.silver.silver_campaign_product_current")
-    record_lineage(
-        "bronze_to_silver_dimensions",
-        ["iceberg.bronze.bronze_campaign_product_cdc"],
+    _write_with_lineage(
+        campaign_product,
         "iceberg.silver.silver_campaign_product_current",
+        job_name="bronze_to_silver_dimensions",
+        upstream_datasets=["iceberg.bronze.bronze_campaign_product_cdc"],
+        run_id=run_id,
     )
 
     for table_name, key_column in (
@@ -175,8 +234,22 @@ def run_dimensions(
         df = spark.table(table_name)
         null_count = df.filter(F.col(key_column).isNull()).count()
         duplicate_count = df.groupBy(key_column).count().filter(F.col("count") > 1).count()
-        append_dq_result("primary_key_not_null", "critical", table_name, null_count == 0, {"null_count": null_count})
-        append_dq_result("business_key_uniqueness", "critical", table_name, duplicate_count == 0, {"duplicate_count": duplicate_count})
+        append_dq_result(
+            "primary_key_not_null",
+            "critical",
+            table_name,
+            null_count == 0,
+            {"null_count": null_count, "expected_null_count": 0},
+            run_id=run_id,
+        )
+        append_dq_result(
+            "business_key_uniqueness",
+            "critical",
+            table_name,
+            duplicate_count == 0,
+            {"duplicate_count": duplicate_count, "expected_duplicate_count": 0},
+            run_id=run_id,
+        )
     if managed_spark:
         spark.stop()
 
@@ -188,6 +261,7 @@ def run_facts(
 ) -> None:
     managed_spark = spark is None
     spark = _initialize_spark("bronze-to-silver-facts", spark=spark)
+    run_id = _new_run_id("bronze_to_silver_facts")
     silver_processed_ts = F.current_timestamp()
 
     customer_session = latest_cdc(
@@ -207,8 +281,13 @@ def run_facts(
     )
     customer_session = optional_date_filter(customer_session, "updated_at", start_date, end_date)
     customer_session = customer_session.filter(F.col("session_end_ts").isNull() | (F.col("session_start_ts") <= F.col("session_end_ts")))
-    write_table(customer_session, "iceberg.silver.silver_customer_session")
-    record_lineage("bronze_to_silver_facts", ["iceberg.bronze.bronze_customer_session_cdc"], "iceberg.silver.silver_customer_session")
+    _write_with_lineage(
+        customer_session,
+        "iceberg.silver.silver_customer_session",
+        job_name="bronze_to_silver_facts",
+        upstream_datasets=["iceberg.bronze.bronze_customer_session_cdc"],
+        run_id=run_id,
+    )
 
     session_events = latest_by_event_uuid(spark.table("iceberg.bronze.bronze_session_event_raw"))
     session_events = optional_date_filter(session_events, "event_date", start_date, end_date)
@@ -230,8 +309,13 @@ def run_facts(
         "schema_version",
         silver_processed_ts.alias("silver_processed_ts"),
     )
-    write_table(silver_events, "iceberg.silver.silver_session_event_clean")
-    record_lineage("bronze_to_silver_facts", ["iceberg.bronze.bronze_session_event_raw"], "iceberg.silver.silver_session_event_clean")
+    _write_with_lineage(
+        silver_events,
+        "iceberg.silver.silver_session_event_clean",
+        job_name="bronze_to_silver_facts",
+        upstream_datasets=["iceberg.bronze.bronze_session_event_raw"],
+        run_id=run_id,
+    )
 
     order_header = latest_cdc(spark.table("iceberg.bronze.bronze_order_header_cdc"), "order_id").select(
         F.col("payload_order_id").alias("order_id"),
@@ -255,8 +339,13 @@ def run_facts(
         & (F.col("tax_amount") >= 0)
         & (F.col("total_amount") >= 0)
     )
-    write_table(order_header, "iceberg.silver.silver_order_header")
-    record_lineage("bronze_to_silver_facts", ["iceberg.bronze.bronze_order_header_cdc"], "iceberg.silver.silver_order_header")
+    _write_with_lineage(
+        order_header,
+        "iceberg.silver.silver_order_header",
+        job_name="bronze_to_silver_facts",
+        upstream_datasets=["iceberg.bronze.bronze_order_header_cdc"],
+        run_id=run_id,
+    )
 
     order_item = latest_cdc(spark.table("iceberg.bronze.bronze_order_item_cdc"), "order_item_id").select(
         F.col("payload_order_item_id").alias("order_item_id"),
@@ -274,8 +363,13 @@ def run_facts(
     order_item = optional_date_filter(order_item, "updated_at", start_date, end_date)
     order_item = order_item.filter((F.col("quantity") > 0) & (F.col("line_amount") >= 0))
     order_item = order_item.filter(F.abs(F.col("line_amount") - (F.col("quantity") * F.col("unit_price"))) <= F.lit(0.01))
-    write_table(order_item, "iceberg.silver.silver_order_item")
-    record_lineage("bronze_to_silver_facts", ["iceberg.bronze.bronze_order_item_cdc"], "iceberg.silver.silver_order_item")
+    _write_with_lineage(
+        order_item,
+        "iceberg.silver.silver_order_item",
+        job_name="bronze_to_silver_facts",
+        upstream_datasets=["iceberg.bronze.bronze_order_item_cdc"],
+        run_id=run_id,
+    )
 
     sales_activity = latest_cdc(spark.table("iceberg.bronze.bronze_sales_activity_cdc"), "sales_activity_id").select(
         F.col("payload_sales_activity_id").alias("sales_activity_id"),
@@ -290,8 +384,13 @@ def run_facts(
         silver_processed_ts.alias("silver_processed_ts"),
     )
     sales_activity = optional_date_filter(sales_activity, "activity_ts", start_date, end_date)
-    write_table(sales_activity, "iceberg.silver.silver_sales_activity")
-    record_lineage("bronze_to_silver_facts", ["iceberg.bronze.bronze_sales_activity_cdc"], "iceberg.silver.silver_sales_activity")
+    _write_with_lineage(
+        sales_activity,
+        "iceberg.silver.silver_sales_activity",
+        job_name="bronze_to_silver_facts",
+        upstream_datasets=["iceberg.bronze.bronze_sales_activity_cdc"],
+        run_id=run_id,
+    )
 
     checks = [
         ("iceberg.silver.silver_session_event_clean", "event_type_enum", silver_events.filter(~F.col("event_type").isin("product_view", "ad_impression", "ad_click", "add_to_cart", "checkout_start")).count()),
@@ -300,7 +399,14 @@ def run_facts(
         ("iceberg.silver.silver_customer_session", "session_window", customer_session.filter(F.col("session_end_ts").isNotNull() & (F.col("session_start_ts") > F.col("session_end_ts"))).count()),
     ]
     for dataset, rule_name, failures in checks:
-        append_dq_result(rule_name, "critical", dataset, failures == 0, {"failure_count": failures})
+        append_dq_result(
+            rule_name,
+            "critical",
+            dataset,
+            failures == 0,
+            {"failure_count": failures, "expected_failure_count": 0},
+            run_id=run_id,
+        )
     if managed_spark:
         spark.stop()
 
@@ -312,6 +418,7 @@ def run_aggregates(
 ) -> None:
     managed_spark = spark is None
     spark = _initialize_spark("silver-aggregates", spark=spark)
+    run_id = _new_run_id("silver_aggregates")
     processed_ts = F.current_timestamp()
 
     events = optional_date_filter(spark.table("iceberg.silver.silver_session_event_clean"), "event_date", start_date, end_date)
@@ -342,11 +449,12 @@ def run_aggregates(
         .na.fill(0, ["views", "ad_clicks", "add_to_cart", "checkout_starts", "purchases", "order_amount", "avg_order_value"])
         .withColumn("processed_ts", processed_ts)
     )
-    write_table(customer_daily, "iceberg.silver.silver_customer_daily_metrics")
-    record_lineage(
-        "silver_aggregates",
-        ["iceberg.silver.silver_session_event_clean", "iceberg.silver.silver_order_header"],
+    _write_with_lineage(
+        customer_daily,
         "iceberg.silver.silver_customer_daily_metrics",
+        job_name="silver_aggregates",
+        upstream_datasets=["iceberg.silver.silver_session_event_clean", "iceberg.silver.silver_order_header"],
+        run_id=run_id,
     )
 
     product_daily = (
@@ -369,11 +477,16 @@ def run_aggregates(
         .na.fill(0, ["product_views", "add_to_cart", "attributed_orders", "attributed_revenue"])
         .withColumn("processed_ts", processed_ts)
     )
-    write_table(product_daily, "iceberg.silver.silver_product_daily_metrics")
-    record_lineage(
-        "silver_aggregates",
-        ["iceberg.silver.silver_session_event_clean", "iceberg.silver.silver_order_item", "iceberg.silver.silver_order_header"],
+    _write_with_lineage(
+        product_daily,
         "iceberg.silver.silver_product_daily_metrics",
+        job_name="silver_aggregates",
+        upstream_datasets=[
+            "iceberg.silver.silver_session_event_clean",
+            "iceberg.silver.silver_order_item",
+            "iceberg.silver.silver_order_header",
+        ],
+        run_id=run_id,
     )
 
     campaign_daily = (
@@ -417,17 +530,18 @@ def run_aggregates(
             "processed_ts",
         )
     )
-    write_table(campaign_daily, "iceberg.silver.silver_campaign_daily_metrics")
-    record_lineage(
-        "silver_aggregates",
-        [
+    _write_with_lineage(
+        campaign_daily,
+        "iceberg.silver.silver_campaign_daily_metrics",
+        job_name="silver_aggregates",
+        upstream_datasets=[
             "iceberg.silver.silver_session_event_clean",
             "iceberg.silver.silver_order_item",
             "iceberg.silver.silver_order_header",
             "iceberg.silver.silver_sales_activity",
             "iceberg.silver.silver_campaign_current",
         ],
-        "iceberg.silver.silver_campaign_daily_metrics",
+        run_id=run_id,
     )
 
     metric_dates = (
@@ -469,21 +583,34 @@ def run_aggregates(
         .na.fill(0, ["sales_contacts", "active_campaigns"])
         .withColumn("processed_ts", processed_ts)
     )
-    write_table(advertiser_daily, "iceberg.silver.silver_advertiser_daily_metrics")
-    record_lineage(
-        "silver_aggregates",
-        ["iceberg.silver.silver_campaign_daily_metrics", "iceberg.silver.silver_sales_activity", "iceberg.silver.silver_campaign_current"],
+    _write_with_lineage(
+        advertiser_daily,
         "iceberg.silver.silver_advertiser_daily_metrics",
+        job_name="silver_aggregates",
+        upstream_datasets=[
+            "iceberg.silver.silver_campaign_daily_metrics",
+            "iceberg.silver.silver_sales_activity",
+            "iceberg.silver.silver_campaign_current",
+        ],
+        run_id=run_id,
     )
 
-    for dataset in (
-        "iceberg.silver.silver_customer_daily_metrics",
-        "iceberg.silver.silver_product_daily_metrics",
-        "iceberg.silver.silver_campaign_daily_metrics",
-        "iceberg.silver.silver_advertiser_daily_metrics",
-    ):
+    minimum_row_counts = {
+        "iceberg.silver.silver_customer_daily_metrics": 1,
+        "iceberg.silver.silver_product_daily_metrics": 1,
+        "iceberg.silver.silver_campaign_daily_metrics": 1,
+        "iceberg.silver.silver_advertiser_daily_metrics": 1,
+    }
+    for dataset, min_expected_row_count in minimum_row_counts.items():
         count_value = spark.table(dataset).count()
-        append_dq_result("volume_baseline", "warning", dataset, count_value >= 0, {"row_count": count_value})
+        append_dq_result(
+            "volume_baseline",
+            "warning",
+            dataset,
+            count_value >= min_expected_row_count,
+            {"row_count": count_value, "min_expected_row_count": min_expected_row_count},
+            run_id=run_id,
+        )
     if managed_spark:
         spark.stop()
 
@@ -495,6 +622,7 @@ def run_ml_features(
 ) -> None:
     managed_spark = spark is None
     spark = _initialize_spark("build-ml-features", spark=spark)
+    run_id = _new_run_id("build_ml_features")
     feature_defs = load_yaml(PROJECT_ROOT / "config" / "features" / "offline_feature_defs.yaml")["features"]
     online_defs = load_yaml(PROJECT_ROOT / "config" / "features" / "online_feature_defs.yaml")["features"]
     feature_def = feature_defs[0]
@@ -542,11 +670,12 @@ def run_ml_features(
         )
         .withColumnRenamed("metric_date", "as_of_date")
     )
-    write_table(feature_df, "iceberg.silver.customer_purchase_features_v1")
-    record_lineage(
-        "build_ml_features",
-        ["iceberg.silver.silver_customer_daily_metrics", "iceberg.silver.silver_order_header"],
+    _write_with_lineage(
+        feature_df,
         "iceberg.silver.customer_purchase_features_v1",
+        job_name="build_ml_features",
+        upstream_datasets=["iceberg.silver.silver_customer_daily_metrics", "iceberg.silver.silver_order_header"],
+        run_id=run_id,
     )
 
     session_events = optional_date_filter(spark.table("iceberg.silver.silver_session_event_clean"), "event_date", start_date, end_date)
@@ -570,12 +699,20 @@ def run_ml_features(
         .withColumn("updated_at", feature_ts)
         .withColumn("ttl_seconds", F.lit(int(online_def["ttl_seconds"])))
     )
-    write_table(parity, "iceberg.silver.customer_realtime_features_v1_parity")
-    record_lineage(
-        "build_ml_features",
-        ["iceberg.silver.silver_session_event_clean"],
+    _write_with_lineage(
+        parity,
         "iceberg.silver.customer_realtime_features_v1_parity",
+        job_name="build_ml_features",
+        upstream_datasets=["iceberg.silver.silver_session_event_clean"],
+        run_id=run_id,
     )
-    append_dq_result("reconciliation_totals", "warning", "iceberg.silver.customer_realtime_features_v1_parity", True, {"comparison_ready": True})
+    append_dq_result(
+        "reconciliation_totals",
+        "warning",
+        "iceberg.silver.customer_realtime_features_v1_parity",
+        True,
+        {"comparison_ready": True},
+        run_id=run_id,
+    )
     if managed_spark:
         spark.stop()

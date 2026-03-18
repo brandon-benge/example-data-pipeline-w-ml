@@ -13,6 +13,10 @@ from ml.evaluate import classifier_metrics, write_metrics
 from ml.features import (
     PROJECT_ROOT,
     as_int,
+    build_advertiser_feature_rows,
+    build_campaign_feature_rows,
+    build_customer_training_rows,
+    load_records,
     write_json,
     write_jsonl,
 )
@@ -50,6 +54,9 @@ class LogisticRegressionModel:
             linear = self.bias + sum(weight * value for weight, value in zip(self.weights, scaled))
             probabilities.append(1.0 / (1.0 + math.exp(-linear)))
         return probabilities
+
+
+LogisticRegressionModel.__module__ = "ml.train"
 
 
 def _utc_now() -> datetime:
@@ -229,6 +236,7 @@ def train_from_rows(
     artifact_root: str | Path = ARTIFACT_ROOT,
     *,
     publish_artifacts: bool = True,
+    register_model: bool = True,
     status: str = "candidate",
 ) -> dict[str, Any]:
     if not rows:
@@ -312,16 +320,17 @@ def train_from_rows(
     else:
         manifest_payload["artifact_uris"] = remote_paths
         write_json(paths["manifest"], manifest_payload)
-    _register_model_version(
-        feature_group=feature_group,
-        label_name=label_name,
-        feature_definition_version=feature_definition_version,
-        trained_at=metrics["trained_at"],
-        local_paths=paths,
-        remote_paths=remote_paths,
-        metrics=metrics,
-        status=status,
-    )
+    if register_model:
+        _register_model_version(
+            feature_group=feature_group,
+            label_name=label_name,
+            feature_definition_version=feature_definition_version,
+            trained_at=metrics["trained_at"],
+            local_paths=paths,
+            remote_paths=remote_paths,
+            metrics=metrics,
+            status=status,
+        )
 
     return {
         "model": model,
@@ -354,7 +363,33 @@ def _normalize_training_rows(feature_group: str, rows: list[dict[str, Any]]) -> 
     return normalized
 
 
-def build_feature_rows(feature_group: str, *, table_name: str | None = None) -> list[dict[str, Any]]:
+def build_feature_rows(
+    feature_group: str,
+    *,
+    table_name: str | None = None,
+    customer_daily_path: str | None = None,
+    order_header_path: str | None = None,
+    campaign_daily_path: str | None = None,
+    advertiser_daily_path: str | None = None,
+    sales_activity_path: str | None = None,
+) -> list[dict[str, Any]]:
+    # Keep the older file-path-driven integration test contract working while the
+    # primary runtime path trains from Iceberg-backed feature tables.
+    if customer_daily_path or order_header_path or campaign_daily_path or advertiser_daily_path or sales_activity_path:
+        if feature_group == "customer":
+            if not customer_daily_path or not order_header_path:
+                raise ValueError("customer feature-group requires customer_daily_path and order_header_path")
+            return build_customer_training_rows(load_records(customer_daily_path), load_records(order_header_path))
+        if feature_group == "campaign":
+            if not campaign_daily_path:
+                raise ValueError("campaign feature-group requires campaign_daily_path")
+            return build_campaign_feature_rows(load_records(campaign_daily_path))
+        if feature_group == "advertiser":
+            if not advertiser_daily_path or not sales_activity_path:
+                raise ValueError("advertiser feature-group requires advertiser_daily_path and sales_activity_path")
+            return build_advertiser_feature_rows(load_records(advertiser_daily_path), load_records(sales_activity_path))
+        raise ValueError(f"File-path training inputs are not supported for feature group: {feature_group}")
+
     resolved_table = table_name or FEATURE_TABLES[feature_group]
     rows = run_trino_query(f"SELECT * FROM {resolved_table}")
     if not rows:

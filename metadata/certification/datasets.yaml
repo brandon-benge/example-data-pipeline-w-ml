@@ -1,0 +1,85 @@
+certifications:
+  - dataset: iceberg.bronze.bronze_customer_cdc
+    tier: draft
+    owner: commerce_platform
+    intended_use: Raw landing zone for CDC replay and debugging, not direct analytics.
+    review_cadence: on_change
+    consumer_ready: false
+    notes: Raw CDC shape is stable enough for ingestion workflows but not curated for broad use.
+  - dataset: iceberg.bronze.bronze_order_header_cdc
+    tier: draft
+    owner: commerce_platform
+    intended_use: Raw landing zone for order CDC before Silver standardization.
+    review_cadence: on_change
+    consumer_ready: false
+    notes: Intended for pipeline operations and replay, not direct BI consumption.
+  - dataset: iceberg.silver.silver_customer_current
+    tier: candidate
+    owner: commerce_platform
+    intended_use: Curated customer dimension with masking applied for downstream models.
+    review_cadence: weekly
+    consumer_ready: true
+    notes: Suitable for governed downstream use but still tied closely to source-system semantics.
+  - dataset: iceberg.silver.silver_order_header
+    tier: candidate
+    owner: commerce_platform
+    intended_use: Curated order header table for marts and ML feature generation.
+    review_cadence: weekly
+    consumer_ready: true
+    notes: Reliable enough for downstream aggregation once Bronze ingestion is healthy.
+  - dataset: iceberg.silver.silver_customer_daily_metrics
+    tier: candidate
+    owner: analytics_engineering
+    intended_use: Aggregated customer-level daily funnel and revenue metrics.
+    review_cadence: weekly
+    consumer_ready: true
+    notes: Good analytical input but still a pre-mart aggregate rather than a final business interface.
+  - dataset: iceberg.gold.dim_customer
+    tier: approved
+    owner: analytics_engineering
+    intended_use: Shared conformed customer dimension for analytics joins and marts.
+    review_cadence: monthly
+    consumer_ready: true
+    notes: Broadly consumable because it uses tokenized identifiers and masked Silver inputs.
+  - dataset: iceberg.gold.fct_orders
+    tier: approved
+    owner: analytics_engineering
+    intended_use: Canonical order fact table for reporting, conversion analysis, and downstream marts.
+    review_cadence: monthly
+    consumer_ready: true
+    notes: Preferred business fact for order analytics.
+  - dataset: iceberg.gold.fct_session_events
+    tier: approved
+    owner: analytics_engineering
+    intended_use: Canonical behavioral fact table for session-event analysis.
+    review_cadence: monthly
+    consumer_ready: true
+    notes: Preferred event fact for funnel and engagement reporting.
+  - dataset: iceberg.gold.mart_customer_conversion
+    tier: approved
+    owner: analytics_engineering
+    intended_use: Ready-to-use customer conversion mart for dashboards and exploratory analysis.
+    review_cadence: monthly
+    consumer_ready: true
+    notes: Stable business-facing output with derived conversion metrics.
+  - dataset: iceberg.gold.mart_campaign_performance
+    tier: approved
+    owner: analytics_engineering
+    intended_use: Ready-to-use campaign performance mart for dashboards and business reviews.
+    review_cadence: monthly
+    consumer_ready: true
+    notes: Stable business-facing output for campaign funnel and attributed revenue analysis.
+  - dataset: iceberg.silver.customer_purchase_features_v1
+    tier: candidate
+    owner: ml_platform
+    intended_use: Offline training feature set for customer purchase models.
+    review_cadence: on_change
+    consumer_ready: true
+    notes: Intended for feature engineering and model training, not dashboard use.
+  - dataset: iceberg.silver.customer_realtime_features_v1_parity
+    tier: candidate
+    owner: ml_platform
+    intended_use: Validation table comparing online-style feature behavior with batch logic.
+    review_cadence: on_change
+    consumer_ready: false
+    notes: Operationally useful for parity checks but not a primary consumer-facing data product.

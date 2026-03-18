@@ -12,8 +12,8 @@ download() {
 }
 
 download \
-  "https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.0_2.13/1.10.0/iceberg-spark-runtime-4.0_2.13-1.10.0.jar" \
-  "/app/spark/jars/iceberg-spark-runtime-4.0_2.13-1.10.0.jar"
+  "https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.0_2.13/1.10.1/iceberg-spark-runtime-4.0_2.13-1.10.1.jar" \
+  "/app/spark/jars/iceberg-spark-runtime-4.0_2.13-1.10.1.jar"
 
 download \
   "https://repo.maven.apache.org/maven2/org/apache/hadoop/hadoop-aws/3.4.1/hadoop-aws-3.4.1.jar" \

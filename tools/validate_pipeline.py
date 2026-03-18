@@ -4,8 +4,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -20,6 +22,9 @@ from platform_stacks import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+STABILITY_CHECK_STACKS: tuple[str, ...] = ("stream-processing", "streaming", "batch")
+DEFAULT_STABILITY_WINDOW_SECONDS = 60
+STABILITY_POLL_SECONDS = 5
 
 CDC_SINK_CONNECTORS: tuple[str, ...] = (
     "postgres-cdc-sales-rep-iceberg-sink",
@@ -114,6 +119,8 @@ def fetch_text(url: str) -> str:
 def configured_cdc_sink_connectors() -> tuple[str, ...]:
     allowlist = os.getenv("CONNECT_SINK_ALLOWLIST", "").strip()
     if not allowlist:
+        allowlist = configured_cdc_sink_allowlist()
+    if not allowlist:
         return CDC_SINK_CONNECTORS
 
     selected: list[str] = []
@@ -122,6 +129,27 @@ def configured_cdc_sink_connectors() -> tuple[str, ...]:
         if connector:
             selected.append(connector)
     return tuple(selected)
+
+
+def configured_cdc_sink_allowlist() -> str:
+    compose_path = ROOT / "docker-compose.yml"
+    if not compose_path.exists():
+        return ""
+
+    text = compose_path.read_text(encoding="utf-8")
+    match = re.search(
+        r"(?ms)^  kafka-connect-sinks-bootstrap:\n(.*?)(?=^  [A-Za-z0-9_-]+:|\Z)",
+        text,
+    )
+    if not match:
+        return ""
+
+    block = match.group(1)
+    env_match = re.search(r"(?m)^\s+CONNECT_SINK_ALLOWLIST:\s*(.+?)\s*$", block)
+    if not env_match:
+        return ""
+
+    return env_match.group(1).strip().strip("'\"")
 
 
 def docker_compose(*args: str) -> str:
@@ -435,11 +463,18 @@ def check_redis(results: list[CheckResult]) -> None:
 
 def check_metadata(results: list[CheckResult]) -> None:
     paths = [
+        ROOT / "metadata" / "catalog_seed.yaml",
+        ROOT / "metadata" / "glossary" / "terms.yaml",
+        ROOT / "metadata" / "certification" / "datasets.yaml",
         ROOT / "metadata" / "lineage" / "bronze_to_silver_dimensions.jsonl",
         ROOT / "metadata" / "lineage" / "bronze_to_silver_facts.jsonl",
         ROOT / "metadata" / "lineage" / "silver_aggregates.jsonl",
         ROOT / "metadata" / "lineage" / "build_ml_features.jsonl",
+        ROOT / "metadata" / "lineage" / "dbt_runs.jsonl",
+        ROOT / "metadata" / "lineage" / "latest_runs.json",
         ROOT / "metadata" / "table_contracts" / "dq_results.jsonl",
+        ROOT / "metadata" / "table_contracts" / "dbt_test_results.jsonl",
+        ROOT / "metadata" / "table_contracts" / "latest_results.json",
     ]
     for path in paths:
         results.append(CheckResult(f"metadata:{path.name}", metadata_file_nonempty(path), str(path.relative_to(ROOT))))
@@ -483,7 +518,7 @@ def check_ml(results: list[CheckResult]) -> None:
         ROOT / "ml" / "features.py",
         ROOT / "ml" / "labels.py",
         ROOT / "ml" / "online_store.py",
-        ROOT / "scripts" / "demo_realtime_scoring.py",
+        ROOT / "tools" / "demo_realtime_scoring.py",
         ROOT / "ml" / "inference_api.py",
         ROOT / "requirements-ml.txt",
         ROOT / "ml" / "artifacts",
@@ -500,6 +535,101 @@ def check_ml(results: list[CheckResult]) -> None:
             results.append(CheckResult(f"ml:{name}", value > 0, f"rows={value}"))
     except subprocess.CalledProcessError as exc:
         results.append(CheckResult("ml:feature_tables", False, exc.stderr.strip() or exc.stdout.strip()))
+
+
+def capture_stability_metrics(
+    context: ValidationContext,
+    enabled_sections: set[str],
+    *,
+    include_postgres: bool,
+    include_redis: bool,
+) -> dict[str, int]:
+    metrics: dict[str, int] = {}
+
+    if include_postgres or "postgres" in enabled_sections:
+        for name, value in query_postgres_counts().items():
+            metrics[f"postgres:{name}"] = value
+
+    if "trino" in enabled_sections:
+        for name, value in query_trino_counts(context.trino_checks).items():
+            metrics[f"trino:{name}"] = value
+
+    if include_redis or "redis" in enabled_sections:
+        metrics["redis:feature_keys"] = len(query_redis_feature_keys())
+
+    return metrics
+
+
+def check_data_stability(
+    results: list[CheckResult],
+    *,
+    stack_name: str,
+    context: ValidationContext,
+    enabled_sections: set[str],
+    stability_window_seconds: int,
+) -> None:
+    if stack_name not in STABILITY_CHECK_STACKS:
+        return
+
+    if stability_window_seconds <= 0:
+        results.append(CheckResult(f"stability:{stack_name}", True, "stability wait disabled"))
+        return
+
+    metric_count = 0
+    try:
+        include_postgres = stack_name in {"stream-processing", "streaming", "batch"}
+        include_redis = stack_name in {"stream-processing", "streaming"}
+        baseline = capture_stability_metrics(
+            context,
+            enabled_sections,
+            include_postgres=include_postgres,
+            include_redis=include_redis,
+        )
+        metric_count = len(baseline)
+        if not baseline:
+            results.append(CheckResult(f"stability:{stack_name}", True, "no count-based metrics selected"))
+            return
+
+        samples = max(1, stability_window_seconds // STABILITY_POLL_SECONDS)
+        print(f"[stability:{stack_name}] Monitoring {metric_count} metrics for {stability_window_seconds}s.")
+        for sample in range(1, samples + 1):
+            print(f"[stability:{stack_name}] Sample {sample}/{samples}")
+            time.sleep(STABILITY_POLL_SECONDS)
+            current = capture_stability_metrics(
+                context,
+                enabled_sections,
+                include_postgres=include_postgres,
+                include_redis=include_redis,
+            )
+            increases = [
+                f"{name} {baseline[name]}->{value}"
+                for name, value in current.items()
+                if name in baseline and value > baseline[name]
+            ]
+            if increases:
+                results.append(
+                    CheckResult(
+                        f"stability:{stack_name}",
+                        False,
+                        "data increased during stability window: " + "; ".join(increases[:5]),
+                    )
+                )
+                return
+            baseline = current
+
+        results.append(
+            CheckResult(
+                f"stability:{stack_name}",
+                True,
+                f"no increases across {metric_count} metrics for {stability_window_seconds}s",
+            )
+        )
+    except subprocess.CalledProcessError as exc:
+        results.append(CheckResult(f"stability:{stack_name}", False, exc.stderr.strip() or exc.stdout.strip()))
+    except urllib.error.URLError as exc:
+        results.append(CheckResult(f"stability:{stack_name}", False, str(exc)))
+    except Exception as exc:  # pragma: no cover - defensive operational path
+        results.append(CheckResult(f"stability:{stack_name}", False, repr(exc)))
 
 
 def render(results: list[CheckResult]) -> int:
@@ -527,12 +657,19 @@ def parse_args() -> argparse.Namespace:
         choices=list(DEFAULT_VALIDATION_SECTIONS),
         help="Skip one validation section. Can be passed multiple times.",
     )
+    parser.add_argument(
+        "--stability-seconds",
+        type=int,
+        default=DEFAULT_STABILITY_WINDOW_SECONDS,
+        help="How long streaming and batch validations must observe stable counts after passing all checks. Use 0 to disable.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     results: list[CheckResult] = []
+    stack_name = args.stack
     if args.stack == "full":
         enabled_sections = set(DEFAULT_VALIDATION_SECTIONS)
         context = ValidationContext(
@@ -581,6 +718,16 @@ def main() -> int:
                 results.append(CheckResult(f"{name}:section", False, str(exc)))
             except Exception as exc:  # pragma: no cover - defensive operational path
                 results.append(CheckResult(f"{name}:section", False, repr(exc)))
+
+    if stack_name != "full" and not any(not result.ok for result in results):
+        check_data_stability(
+            results,
+            stack_name=stack_name,
+            context=context,
+            enabled_sections=enabled_sections,
+            stability_window_seconds=args.stability_seconds,
+        )
+
     return render(results)
 
 

@@ -1,7 +1,7 @@
 jobmanager.rpc.address: flink-jobmanager
 jobmanager.memory.process.size: 3072m
-taskmanager.memory.process.size: 8192m
-taskmanager.numberOfTaskSlots: 4
+taskmanager.memory.process.size: 5120m
+taskmanager.numberOfTaskSlots: 2
 parallelism.default: 1
 rest.port: 8081
 io.tmp.dirs: /tmp/flink-tmp

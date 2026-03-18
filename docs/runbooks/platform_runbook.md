@@ -4,6 +4,88 @@
 
 This runbook defines the operator commands referenced by the architecture for bringing up the local platform, loading data, running jobs, validating outputs, and troubleshooting common issues.
 
+## Automated stack-first workflow script
+
+The preferred operator entry point is now the stack-first automation script. The VS Code pipeline tasks call these commands directly:
+
+```bash
+bash tools/run_stack_workflow.sh --stop-at ingestion
+bash tools/run_stack_workflow.sh --stop-at stream-processing
+bash tools/run_stack_workflow.sh --stop-at batch
+bash tools/run_stack_workflow.sh --stop-at analytics
+bash tools/run_stack_workflow.sh --stop-at ml
+```
+
+The script orchestrates stack startup, generator seeding on ingestion, validation retries, and stack shutdown for each stage.
+
+## Command reference for retired tasks
+
+The commands below remain documented here even though they were removed from VS Code tasks to keep tasks.json lean.
+
+Platform commands:
+
+```bash
+docker compose down
+docker compose down -v
+docker compose logs kafka-bootstrap
+docker compose logs superset-bootstrap
+```
+
+Stack commands:
+
+```bash
+python3 tools/manage_stack.py list
+python3 tools/manage_stack.py stop streaming
+python3 tools/manage_stack.py stop batch
+python3 tools/manage_stack.py stop analytics
+python3 tools/manage_stack.py stop ml
+```
+
+Generator command:
+
+```bash
+source .venv/bin/activate && python3 generator/app.py --config params.yaml --mode both
+```
+
+dbt and ML commands:
+
+```bash
+docker compose exec dbt dbt debug
+docker compose exec dbt dbt run
+docker compose exec dbt dbt test
+docker compose exec dbt dbt build
+docker compose exec dbt dbt build --select path:models/staging
+docker compose exec dbt dbt build --select path:models/marts/dimensions path:models/marts/facts
+docker compose exec dbt dbt build --select path:models/marts/marts
+docker compose exec dbt dbt build --select path:models/semantic
+docker compose exec dbt dbt build --select features
+docker compose logs dbt-scheduler
+docker compose logs -f dbt-scheduler
+docker compose logs -f ml-training
+curl http://localhost:8010/health
+curl -X POST http://localhost:8010/score/customer_purchase -H 'Content-Type: application/json' -d '{"customer_id": 123, "write_redis": true}'
+curl -X POST http://localhost:8010/score/campaign_success -H 'Content-Type: application/json' -d '{"campaign_id": 456, "write_redis": true}'
+curl -X POST http://localhost:8010/score/advertiser_budget_expansion -H 'Content-Type: application/json' -d '{"advertiser_id": 789, "write_redis": true}'
+```
+
+Validation commands:
+
+```bash
+python3 tools/validate_pipeline.py
+python3 tools/validate_pipeline.py --stack streaming
+python3 tools/validate_pipeline.py --stack batch
+python3 tools/validate_pipeline.py --stack analytics
+python3 tools/validate_pipeline.py --stack ml
+curl http://localhost:8083/connectors/postgres-cdc-connector/status
+curl http://localhost:8081/subjects
+curl http://localhost:8080/v1/info
+curl http://localhost:9000/minio/health/live
+curl http://localhost:8088/health
+docker compose exec kafka /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+docker compose exec redis redis-cli HGETALL features:customer:123:v1
+docker compose exec redis redis-cli TTL features:customer:123:v1
+```
+
 ## Startup and shutdown
 
 Start the full local stack:
@@ -82,6 +164,20 @@ The stack commands are designed for one-at-a-time operation. Shared services lik
 `streaming` remains the combined convenience stack. Use `ingestion` when you only need source-system intake into Kafka. Use `stream-processing` when you only need Kafka-to-Bronze/Redis processing. `stream-processing` no longer pulls up the Debezium source worker transitively.
 
 The current local catalog design also shares the existing Postgres instance and database with the Iceberg REST catalog metadata backend. That is intentional for laptop simplicity, but it means `stream-processing` also depends on Postgres even when it is not reading OLTP tables directly. In a more realistic setup, the catalog should use a separate database from the OLTP source tables.
+
+For a quick A/B test of the Iceberg REST metadata backend, you can temporarily override the catalog JDBC URI before recreating dependent services:
+
+```bash
+export ICEBERG_CATALOG_URI='jdbc:sqlite:/tmp/iceberg_rest_mode.db'
+docker compose up -d --force-recreate iceberg-rest trino kafka-connect-sinks kafka-connect-sinks-bootstrap
+```
+
+Return to the default Postgres-backed catalog by unsetting the override and recreating the same services:
+
+```bash
+unset ICEBERG_CATALOG_URI
+docker compose up -d --force-recreate iceberg-rest trino kafka-connect-sinks kafka-connect-sinks-bootstrap
+```
 
 ## Kafka topic creation
 
@@ -241,7 +337,7 @@ docker compose exec dbt dbt test --select staging
 
 ## Run ML training
 
-ML code is implemented under `ml/`. dbt now builds the offline ML feature tables in Iceberg, and the training flow reads those tables directly. Local copies of artifacts are still written under `ml/artifacts/`, and the canonical artifact copies are published to the MinIO `ml-artifacts` bucket with version metadata written to `iceberg.silver.ml_model_registry`.
+ML code is implemented under `ml/`. dbt now builds the offline ML feature tables in Iceberg, and the training flow reads those tables directly. Training still writes local artifacts under `ml/artifacts/`, while the canonical artifact copies are published to the MinIO `ml-artifacts` bucket with version metadata written to `iceberg.silver.ml_model_registry`. The runtime inference service does not read the local artifact directory; it resolves the latest manifest from `iceberg.silver.ml_model_registry` and downloads artifacts from MinIO at runtime.
 
 Build the dbt-managed ML feature tables from the batch stack:
 

@@ -1,0 +1,11 @@
+{
+  "slug": "category_order_contribution_bar",
+  "title": "Category Order Contribution",
+  "description": "Order contribution by category over time.",
+  "dataset_slug": "gold_product_channel_contribution",
+  "viz_type": "bar",
+  "x_axis": "metric_date",
+  "groupby": ["category"],
+  "metrics": ["total_orders"],
+  "row_limit": 10000
+}

@@ -1,13 +1,85 @@
 datasets:
-  - name: lakehouse.bronze.bronze_customer_cdc
+  - name: iceberg.bronze.bronze_customer_cdc
+    layer: bronze
     classification: internal
+    owner: commerce_platform
     certification_tier: draft
     discoverability_status: hidden
-  - name: lakehouse.silver.silver_customer_current
+    description: Raw Debezium customer CDC stream landed in Iceberg.
+  - name: iceberg.bronze.bronze_order_header_cdc
+    layer: bronze
+    classification: internal
+    owner: commerce_platform
+    certification_tier: draft
+    discoverability_status: hidden
+    description: Raw order header CDC records with Kafka and CDC metadata.
+  - name: iceberg.silver.silver_customer_current
+    layer: silver
     classification: confidential
+    owner: commerce_platform
     certification_tier: candidate
     discoverability_status: searchable
-  - name: lakehouse.gold.mart_campaign_performance
-    classification: internal
+    description: Latest-corrected customer dimension with masked PII columns for downstream use.
+  - name: iceberg.silver.silver_order_header
+    layer: silver
+    classification: confidential
+    owner: commerce_platform
     certification_tier: candidate
+    discoverability_status: searchable
+    description: Curated order header fact-like table used by marts and feature generation.
+  - name: iceberg.silver.silver_customer_daily_metrics
+    layer: silver
+    classification: confidential
+    owner: analytics_engineering
+    certification_tier: candidate
+    discoverability_status: searchable
+    description: Daily customer funnel and revenue aggregates computed from events and orders.
+  - name: iceberg.gold.dim_customer
+    layer: gold
+    classification: internal
+    owner: analytics_engineering
+    certification_tier: approved
     discoverability_status: promoted
+    description: Gold customer dimension keyed by customer token for broad analytical joins.
+  - name: iceberg.gold.fct_orders
+    layer: gold
+    classification: internal
+    owner: analytics_engineering
+    certification_tier: approved
+    discoverability_status: promoted
+    description: Order fact table with customer token and monetary measures for reporting.
+  - name: iceberg.gold.fct_session_events
+    layer: gold
+    classification: internal
+    owner: analytics_engineering
+    certification_tier: approved
+    discoverability_status: promoted
+    description: Session event fact table for behavioral and funnel analysis.
+  - name: iceberg.gold.mart_customer_conversion
+    layer: gold
+    classification: internal
+    owner: analytics_engineering
+    certification_tier: approved
+    discoverability_status: promoted
+    description: Business-facing mart for browse-to-purchase conversion analysis.
+  - name: iceberg.gold.mart_campaign_performance
+    layer: gold
+    classification: internal
+    owner: analytics_engineering
+    certification_tier: approved
+    discoverability_status: promoted
+    description: Business-facing mart for campaign funnel and attributed revenue analysis.
+  - name: iceberg.silver.customer_purchase_features_v1
+    layer: silver
+    classification: confidential
+    owner: ml_platform
+    certification_tier: candidate
+    discoverability_status: searchable
+    description: Offline training features for customer purchase propensity models.
+  - name: iceberg.silver.customer_realtime_features_v1_parity
+    layer: silver
+    classification: confidential
+    owner: ml_platform
+    certification_tier: candidate
+    discoverability_status: searchable
+    description: Online-style feature parity table used to validate real-time feature behavior.

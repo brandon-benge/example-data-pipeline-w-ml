@@ -54,7 +54,7 @@ The Gold layer is intended to support questions such as:
 
 ## ML Rationale
 
-Training jobs use dbt-built Iceberg feature tables in `iceberg.silver`. The current repo trains custom logistic-regression classifiers in Python, caches local artifacts under `ml/artifacts/`, and publishes canonical copies to MinIO.
+Training jobs use dbt-built Iceberg feature tables in `iceberg.silver`. The current repo trains custom logistic-regression classifiers in Python, writes local training artifacts under `ml/artifacts/`, and publishes canonical copies to MinIO.
 
 The platform also supports real-time online feature serving using Redis as the low-latency feature store for approved serving features.
 
@@ -64,9 +64,10 @@ The current repo boundary is:
 
 - dbt builds offline feature tables
 - ML code trains models from those tables
-- model binaries are stored in MinIO object storage
+- training emits local artifact files under `ml/artifacts/`, while canonical model binaries are stored in MinIO object storage
 - model-version metadata is stored in an Iceberg registry table
-- the compose-managed `ml-inference` container is the runtime serving path, while `scripts/demo_realtime_scoring.py` remains only as a helper/demo wrapper around the same scoring logic
+- the compose-managed `ml-inference` container is the runtime serving path, queries `iceberg.silver.ml_model_registry` for the latest manifest, downloads artifacts from MinIO in memory, and serves the scoring endpoints
+- `tools/demo_realtime_scoring.py` is the repo's CLI helper for exercising the same scoring logic used by the inference service
 
 ### Current algorithm set
 

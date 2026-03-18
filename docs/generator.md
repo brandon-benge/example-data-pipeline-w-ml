@@ -7,7 +7,7 @@ The generator creates two kinds of source data:
 - relational source tables in Postgres
 - Avro `session_event` messages in Kafka
 
-The entrypoint is [`generator/app.py`](/Users/brandonbenge/Desktop/GitProjects/example-data-pipeline-w-ml/generator/app.py). It always builds an in-memory source bundle first, then optionally writes that bundle to Postgres, Kafka, or both depending on `--mode`.
+The entrypoint is [`generator/app.py`](../generator/app.py). It always builds an in-memory source bundle first, then optionally writes that bundle to Postgres, Kafka, or both depending on `--mode`.
 
 ## What the script actually does
 
@@ -27,11 +27,31 @@ The main controls are:
 - `--seed`
 - `--mode postgres|kafka|both`
 
+The config file now uses table-aligned row keys so the counts are more obvious at a glance:
+
+- `customer_rows`
+- `sales_rep_rows`
+- `advertiser_rows`
+- `product_rows`
+- `campaign_rows`
+- `customer_session_rows`
+- `order_header_rows`
+- `sales_activity_rows`
+- `session_event_rows`
+
+For analytics quality, the generator now assumes `session_event_rows` should be materially higher than `order_header_rows`. The default `params.yaml` keeps session-event volume above order volume so funnel and attribution charts have enough non-purchase behavior to look realistic.
+
+The older keys are still accepted as compatibility aliases:
+
+- `customers` -> `customer_rows`
+- `orders_per_hour` -> `order_header_rows`
+- `events_per_minute` -> `session_event_rows`
+
 ## Entity counts and derived counts
 
-`customers`, `events_per_minute`, and `orders_per_hour` come from [`params.yaml`](/Users/brandonbenge/Desktop/GitProjects/example-data-pipeline-w-ml/params.yaml) or CLI overrides.
+`customer_rows`, `session_event_rows`, and `order_header_rows` come from [`params.yaml`](../params.yaml) or CLI overrides.
 
-Other counts are derived in [`generator/config.py`](/Users/brandonbenge/Desktop/GitProjects/example-data-pipeline-w-ml/generator/config.py):
+Other counts are derived in [`generator/config.py`](../generator/config.py):
 
 - `sales_reps` depends on customer count
 - `advertisers` depends on customer count
@@ -40,11 +60,44 @@ Other counts are derived in [`generator/config.py`](/Users/brandonbenge/Desktop/
 - `sessions` is `max(customers // 2, events_per_minute * 3)`
 - `sales_activities` depends on advertisers and orders
 
-That means increasing event volume can also change the number of generated sessions, even if customer count stays the same.
+The generator now enforces a minimum of `50,000` rows for every Postgres source-table base count:
+
+- `customer`
+- `sales_rep`
+- `advertiser`
+- `product`
+- `campaign`
+- `customer_session`
+- `order_header`
+- `sales_activity`
+
+And the derived bridge/fact child tables naturally stay above that floor too:
+
+- `campaign_product` is generated from all campaigns and will exceed `50,000`
+- `order_item` is generated from all orders and will exceed `50,000`
+
+That means increasing event volume can also change the number of generated sessions, even if customer count stays the same, but no generated Postgres source table will fall below `50,000` rows.
+
+The generator also now produces more curated relationships across those entities:
+
+- customer sessions are spread across roughly four weeks instead of only a few days
+- session events are generated as coherent session-level funnels instead of independent random rows
+- orders are generated from higher-intent session plans instead of drifting independently
+- order timestamps are kept on the same session day as the funnel activity that drove them
+- order-linked session plans emit enough `product_view`, `ad_click`, `add_to_cart`, and `checkout_start` events to keep customer-day funnel metrics aligned in Silver and Gold
+
+One consequence of that alignment rule:
+
+- `session_event_rows` is now treated as a minimum target, not a hard cap
+- if order-linked sessions require more funnel events than the configured target, the generator will emit the larger number so conversion marts do not show purchases without supporting funnel activity
 
 ## What happens if you rerun with the same 10,000 customers
 
 For Postgres, rerunning with the same customer count does not create `customer_id` 10001+ automatically.
+
+One important caveat now:
+
+- if you pass a lower number such as `--customers 10000` or `--orders-per-hour 1000`, the generator will still raise that to the `50,000` minimum for source-table generation
 
 The relational source tables use fixed primary-key ranges like:
 
@@ -52,7 +105,7 @@ The relational source tables use fixed primary-key ranges like:
 - sessions: `1..session_count`
 - orders: `1..order_count`
 
-And the Postgres writer uses `INSERT ... ON CONFLICT DO UPDATE` in [`generator/postgres_writer.py`](/Users/brandonbenge/Desktop/GitProjects/example-data-pipeline-w-ml/generator/postgres_writer.py).
+And the Postgres writer uses `INSERT ... ON CONFLICT DO UPDATE` in [`generator/postgres_writer.py`](../generator/postgres_writer.py).
 
 So if you rerun with `customers=10000`:
 
@@ -67,7 +120,7 @@ This is effectively a reseed/refresh of the same source tables, not an append-on
 
 Not fully.
 
-Even with the same `--seed`, the rows are not guaranteed to be byte-for-byte identical across runs because `generated_at` is set to the current time in [`generator/config.py`](/Users/brandonbenge/Desktop/GitProjects/example-data-pipeline-w-ml/generator/config.py). Many timestamps are derived from that value.
+Even with the same `--seed`, the rows are not guaranteed to be byte-for-byte identical across runs because `generated_at` is set to the current time in [`generator/config.py`](../generator/config.py). Many timestamps are derived from that value.
 
 So with the same seed and counts:
 
@@ -76,7 +129,7 @@ So with the same seed and counts:
 - relative randomness stays stable
 - timestamps shift with the current run time
 
-Kafka events are even less repeatable because [`generator/scenarios/sessions.py`](/Users/brandonbenge/Desktop/GitProjects/example-data-pipeline-w-ml/generator/scenarios/sessions.py) uses `uuid4()` for `event_uuid`, which is always fresh.
+Kafka events are even less repeatable because [`generator/scenarios/sessions.py`](../generator/scenarios/sessions.py) uses `uuid4()` for `event_uuid`, which is always fresh.
 
 ## How Kafka events behave on rerun
 
@@ -146,6 +199,24 @@ python3 generator/app.py --config params.yaml --mode postgres --customers 10000 
 ```
 
 That last command still rewrites the same primary-key ranges for orders and related entities. It is not append-only history.
+
+## Minimum row guarantee
+
+For local debugging, the generator now guarantees at least `50,000` rows in every generated Postgres source table, even if the YAML config or CLI overrides request smaller counts.
+
+This was added specifically because tiny CDC topics were repeatedly stalling in the Iceberg Kafka Connect sink path in local runs.
+
+Observed failure pattern before the change:
+
+- sink connectors stayed `RUNNING`
+- Bronze tables remained at `0`
+- source consumer offsets were never committed
+- DLQ topics stayed empty
+- sink logs repeatedly showed `committed to 0 table(s)` and related control/commit churn
+
+After raising every generated Postgres source table to at least `50,000` rows, the previously failing CDC sink connectors eventually committed successfully.
+
+So in this repo, the `50,000` minimum is a documented local stability workaround for low-volume CDC topics, not an arbitrary default.
 
 ## Practical answer
 

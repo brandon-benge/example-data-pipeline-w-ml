@@ -6,5 +6,5 @@ select
     sales_contacts,
     attributed_revenue,
     revenue_per_sales_contact
-from lakehouse.gold.mart_advertiser_engagement
+from iceberg.gold.mart_advertiser_engagement
 order by metric_date, advertiser_name

@@ -16,10 +16,29 @@ from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.table import EnvironmentSettings, StreamTableEnvironment, TableEnvironment
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-ICEBERG_DDL_PATH = PROJECT_ROOT / "flink" / "sql" / "iceberg_ddl.sql"
-ONLINE_FEATURE_DEFS_PATH = PROJECT_ROOT / "config" / "features" / "online_feature_defs.yaml"
-SESSION_EVENT_SCHEMA_PATH = PROJECT_ROOT / "generator" / "schemas" / "session_event.json"
+def _first_existing_path(*candidates: Path) -> Path:
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+PROJECT_ROOT = _first_existing_path(
+    Path("/opt/flink/usrlib/repo"),
+    Path(__file__).resolve().parents[2],
+)
+ICEBERG_DDL_PATH = _first_existing_path(
+    PROJECT_ROOT / "flink" / "sql" / "iceberg_ddl.sql",
+    Path(__file__).resolve().parents[1] / "sql" / "iceberg_ddl.sql",
+)
+ONLINE_FEATURE_DEFS_PATH = _first_existing_path(
+    PROJECT_ROOT / "config" / "features" / "online_feature_defs.yaml",
+    Path("/opt/flink/usrlib/repo/config/features/online_feature_defs.yaml"),
+)
+SESSION_EVENT_SCHEMA_PATH = _first_existing_path(
+    PROJECT_ROOT / "generator" / "schemas" / "session_event.json",
+    Path("/opt/flink/usrlib/repo/generator/schemas/session_event.json"),
+)
 
 ALLOWED_EVENT_TYPES = {
     "product_view",

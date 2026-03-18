@@ -12,6 +12,7 @@ run_chunk() {
 
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Starting dbt chunk: $label"
   if dbt build "$@"; then
+    python3 /app/bootstrap/export_metadata.py "$label"
     echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Completed dbt chunk: $label"
     return 0
   fi
@@ -37,12 +38,12 @@ while true; do
 
   if [ "$cycle_failed" -eq 0 ]; then
     sleep "$chunk_sleep_seconds"
-    run_chunk "marts" --select marts || cycle_failed=1
+    run_chunk "features" --select features || cycle_failed=1
   fi
 
   if [ "$cycle_failed" -eq 0 ]; then
     sleep "$chunk_sleep_seconds"
-    run_chunk "features" --select features || cycle_failed=1
+    run_chunk "marts" --select marts || cycle_failed=1
   fi
 
   if [ "$cycle_failed" -eq 0 ]; then

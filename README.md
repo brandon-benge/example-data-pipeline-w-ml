@@ -48,13 +48,32 @@ Prerequisites:
 
 ## Startup
 
-Bring up the full local platform:
+There are two ways to run the local platform:
+
+Recommended for normal local use:
+
+- use the staged wrapper flow in [Demo Workflow](./docs/runbooks/demo_workflow.md)
+- the wrapper starts the platform in phases, validates each stage, and monitors data as it moves through the system
+
+Full-stack option:
 
 ```bash
 docker compose up -d
 ```
 
-This is the canonical local startup path. Kafka topic creation, Schema Registry subject registration, Debezium source registration, Iceberg sink registration, MinIO/Iceberg bootstrap, Trino, and Superset initialization all happen through Compose-managed services.
+This brings up the whole platform at once, but it is heavy for a laptop and can consume substantial CPU and memory.
+
+The staged workflow is usually the better local experience:
+
+```bash
+bash tools/run_stack_workflow.sh --stop-at ingestion
+bash tools/run_stack_workflow.sh --stop-at stream-processing
+bash tools/run_stack_workflow.sh --stop-at batch
+bash tools/run_stack_workflow.sh --stop-at analytics
+bash tools/run_stack_workflow.sh --stop-at ml
+```
+
+If you do use `docker compose up -d`, Kafka topic creation, Schema Registry subject registration, Debezium source registration, Iceberg sink registration, MinIO/Iceberg bootstrap, Trino, and Superset initialization all happen through Compose-managed services.
 Flink streaming job submission and Spark batch job execution are also started through Compose-managed services.
 The REST-catalog namespaces and Bronze CDC table DDL are also initialized by a dedicated one-shot bootstrap service before the per-table Kafka Connect Iceberg sinks are registered. The Debezium source connector and the Iceberg sink connectors run on separate Kafka Connect workers in local mode.
 
@@ -82,12 +101,14 @@ That seeds:
 - mutable business tables in Postgres for CDC capture
 - `events.session_event` behavioral events in Kafka
 
+The staged wrapper in [Demo Workflow](./docs/runbooks/demo_workflow.md) runs this generation step at the right point in the flow and then validates downstream stages as data lands in Bronze, Silver, Gold, Redis, and the ML serving path.
+
 ## Architecture-aligned workflow
 
-1. Start the platform with `docker compose up -d`.
-2. Run the synthetic generator manually.
-3. Let the compose-managed Kafka Connect, Flink, and Spark services process CDC and event data into Bronze, Silver, Gold-supporting Silver datasets, Redis, and Superset.
-4. Inspect curated outputs through Superset, Trino, Redis, and repository-managed metadata/artifacts.
+1. Prefer the staged wrapper flow in [Demo Workflow](./docs/runbooks/demo_workflow.md) over bringing up the whole stack at once.
+2. The wrapper starts ingestion, stream-processing, batch, analytics, and ML in order.
+3. It runs validation after each stage so you can see when data has actually moved into Bronze, Silver, Gold, Redis, and the model registry.
+4. The ML stage ends with inference checks against the API, including `curl` examples for customer, campaign, and advertiser scoring.
 
 ## Example ML Decisions
 
@@ -98,6 +119,20 @@ The platform demonstrates three operational ML decision patterns:
 - **Advertiser budget expansion** – predicts likelihood of increased advertising spend
 
 These predictions are exposed through the containerized inference service.
+
+The practical way to exercise them is documented in [Demo Workflow](./docs/runbooks/demo_workflow.md), including the `curl` commands for:
+
+- `POST /score/customer_purchase`
+- `POST /score/campaign_success`
+- `POST /score/advertiser_budget_expansion`
+
+Training remains lightweight and local-demo-friendly:
+
+- training features are assembled from Silver-derived feature tables
+- local training artifacts are written under [ml/artifacts/](./ml/artifacts)
+- canonical artifact copies are published to MinIO
+- model metadata is recorded in `iceberg.silver.ml_model_registry`
+- runtime inference resolves the latest manifest from the registry and downloads the model from MinIO in memory at request time
 
 ## Key paths
 
@@ -125,16 +160,6 @@ The inference surface exposes separate use-case endpoints:
 - `POST /score/advertiser_budget_expansion`
 
 Superset is bootstrapped during `docker compose up` and creates a Trino connection using the local pattern `trino://trino:8080/iceberg`, defaulting BI assets to the curated `gold` schema.
-
-## ML implementation
-
-The ML layer is intentionally lightweight and local-demo-friendly:
-
-- training features are assembled only from Silver-derived feature dataset snapshots
-- example feature groups are supported for customer, campaign, and advertiser use cases
-- example labels are supported for `customer_purchase_next_7d`, `campaign_success_flag`, and `advertiser_budget_increase_next_30d`
-- training writes local artifacts under [ml/artifacts/](./ml/artifacts), publishes canonical copies to MinIO, and records model metadata in `iceberg.silver.ml_model_registry`
-- the runtime inference service queries `iceberg.silver.ml_model_registry` for the latest manifest and downloads the manifest and model from MinIO in memory at request time
 
 ## Tests
 

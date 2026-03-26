@@ -1,0 +1,73 @@
+$ kubectl get pods -A -o wide
+NAMESPACE               NAME                                    READY   STATUS                   RESTARTS         AGE     IP              NODE                           NOMINATED NODE   READINESS GATES
+data-platform-govern    metadata-86cdcf84bc-4j65v               1/1     Running                  0                73m     10.108.11.160   basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     iceberg-rest-b58b9b66b-gc7vz            1/1     Running                  2 (72m ago)      73m     10.108.11.217   basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     kafka-0                                 1/1     Running                  0                56s     10.108.11.146   basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     kafka-bootstrap-9gf24                   0/1     Completed                1                35m     10.108.11.211   basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     minio-0                                 1/1     Running                  0                73m     10.108.11.243   basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     postgres-0                              1/1     Running                  0                73m     10.108.11.181   basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-2lzc6        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-4tgrh        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-6fq2p        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-88sn6        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-8xhbk        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-9mrfb        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-d6c7q        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-dtfj6        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-fwf28        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-gbg2s        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-glhsv        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-h5skf        1/1     Running                  0                48m     10.108.11.196   basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-hnqj9        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-jj5lz        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-jrj9m        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-m54nz        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-m6dhm        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-mf9rc        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-nn9ck        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-p26cg        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-prg2g        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-qpkxb        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-r7xp6        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-rrjnh        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-sfgxg        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-stdtj        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-tzkvv        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-vqln7        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-xc7k4        0/1     Error                    0                73m     10.108.11.157   basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-z47hw        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-6b4f7858d9-zpp9l        0/1     Evicted                  0                72m     <none>          basic-compute-nodepool-day90   <none>           <none>
+data-platform-infra     schema-registry-bootstrap-vsh45         0/1     Completed                0                2m20s   10.108.11.231   basic-compute-nodepool-day90   <none>           <none>
+data-platform-ingest    kafka-connect-sinks-59444cb8b6-44bhx    0/1     Init:1/2                 9 (86s ago)      84m     10.108.11.253   basic-compute-nodepool-day90   <none>           <none>
+data-platform-ingest    kafka-connect-sinks-bootstrap-2s547     0/1     Error                    0                45m     10.108.11.192   basic-compute-nodepool-day90   <none>           <none>
+data-platform-ingest    kafka-connect-sinks-bootstrap-txzqr     0/1     ContainerStatusUnknown   4 (47m ago)      73m     10.108.11.193   basic-compute-nodepool-day90   <none>           <none>
+data-platform-ingest    kafka-connect-source-7bfcfcff57-2lc82   1/1     Running                  0                73m     10.108.11.205   basic-compute-nodepool-day90   <none>           <none>
+data-platform-process   dbt-56df8b4f49-f55qq                    1/1     Running                  0                73m     10.108.11.175   basic-compute-nodepool-day90   <none>           <none>
+data-platform-process   dbt-scheduler-7c7bbdf84c-hxk5t          1/1     Running                  0                73m     10.108.11.198   basic-compute-nodepool-day90   <none>           <none>
+data-platform-process   flink-jobmanager-db7867d45-hhz2n        1/1     Running                  0                73m     10.108.11.214   basic-compute-nodepool-day90   <none>           <none>
+data-platform-process   flink-taskmanager-6bb689d7b5-l5gz5      0/1     CrashLoopBackOff         8 (72s ago)      73m     10.108.11.197   basic-compute-nodepool-day90   <none>           <none>
+data-platform-process   spark-676cd8859b-x9mw7                  1/1     Running                  0                73m     10.108.11.204   basic-compute-nodepool-day90   <none>           <none>
+data-platform-process   spark-bootstrap-7f46fcdbbc-p8rwk        1/1     Running                  11 (4m43s ago)   73m     10.108.11.225   basic-compute-nodepool-day90   <none>           <none>
+data-platform-serve     superset-6c777cf769-kzvfw               1/1     Running                  0                73m     10.108.11.183   basic-compute-nodepool-day90   <none>           <none>
+data-platform-serve     superset-bootstrap-7fvzx                0/1     ContainerStatusUnknown   4 (68m ago)      91m     10.108.11.200   basic-compute-nodepool-day90   <none>           <none>
+data-platform-serve     superset-bootstrap-qm8gh                0/1     ContainerStatusUnknown   3 (46m ago)      48m     10.108.11.184   basic-compute-nodepool-day90   <none>           <none>
+data-platform-serve     superset-bootstrap-tnb7p                0/1     ContainerStatusUnknown   1 (26m ago)      27m     10.108.11.130   basic-compute-nodepool-day90   <none>           <none>
+data-platform-serve     trino-748599d677-gm8v6                  1/1     Running                  0                60s     10.108.11.211   basic-compute-nodepool-day90   <none>           <none>
+data-platform-serve     trino-748599d677-p2g95                  0/1     Error                    1                92m     10.108.11.155   basic-compute-nodepool-day90   <none>           <none>
+data-platform-serve     trino-748599d677-sdwcs                  0/1     Error                    0                27m     10.108.11.206   basic-compute-nodepool-day90   <none>           <none>
+kube-system             cilium-jp78b                            1/1     Running                  0                103m    10.118.0.4      basic-compute-nodepool-day90   <none>           <none>
+kube-system             cilium-pfvhr                            0/1     Error                    0                57s     10.118.0.2      basic-compute-nodepool-dab3b   <none>           <none>
+kube-system             coredns-b59ff8687-dbmkz                 1/1     Running                  0                73m     10.108.11.207   basic-compute-nodepool-day90   <none>           <none>
+kube-system             coredns-b59ff8687-qskkn                 1/1     Running                  0                73m     10.108.11.129   basic-compute-nodepool-day90   <none>           <none>
+kube-system             cpc-bridge-proxy-ebpf-px4cf             1/1     Running                  0                103m    10.118.0.4      basic-compute-nodepool-day90   <none>           <none>
+kube-system             cpc-bridge-proxy-ebpf-w2l49             0/1     NodeShutdown             0                25s     <none>          basic-compute-nodepool-dab3b   <none>           <none>
+kube-system             csi-do-node-r6q82                       2/2     Running                  0                103m    10.118.0.4      basic-compute-nodepool-day90   <none>           <none>
+kube-system             csi-do-node-v6brs                       0/2     NodeShutdown             0                25s     <none>          basic-compute-nodepool-dab3b   <none>           <none>
+kube-system             do-node-agent-ppglt                     1/1     Running                  0                103m    10.118.0.4      basic-compute-nodepool-day90   <none>           <none>
+kube-system             do-node-agent-tjhmc                     0/1     NodeShutdown             0                25s     <none>          basic-compute-nodepool-dab3b   <none>           <none>
+kube-system             doks-telemetry-config-reloader-dmvdm    1/1     Running                  0                29s     10.118.0.2      basic-compute-nodepool-dab3b   <none>           <none>
+kube-system             doks-telemetry-config-reloader-vtx5c    1/1     Running                  0                103m    10.118.0.4      basic-compute-nodepool-day90   <none>           <none>
+kube-system             hubble-relay-586f444678-5j87x           1/1     Running                  0                73m     10.108.11.145   basic-compute-nodepool-day90   <none>           <none>
+kube-system             hubble-ui-6b7f58bdd5-b89vf              2/2     Running                  0                73m     10.108.11.167   basic-compute-nodepool-day90   <none>           <none>
+kube-system             konnectivity-agent-42vlc                1/1     Running                  0                103m    10.108.11.233   basic-compute-nodepool-day90   <none>           <none>
+kube-system             konnectivity-agent-pcrvk                1/1     Running                  0                29s     10.108.13.53    basic-compute-nodepool-dab3b   <none>           <none>

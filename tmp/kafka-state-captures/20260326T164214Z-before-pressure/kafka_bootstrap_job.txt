@@ -1,0 +1,136 @@
+$ kubectl -n data-platform-infra get job kafka-bootstrap -o yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"batch/v1","kind":"Job","metadata":{"annotations":{},"name":"kafka-bootstrap","namespace":"data-platform-infra"},"spec":{"template":{"metadata":{"labels":{"app.kubernetes.io/name":"kafka-bootstrap","platform.example.io/stack":"ingestion"}},"spec":{"containers":[{"command":["/bin/sh","/bootstrap-tools/bootstrap-topics.sh"],"env":[{"name":"KAFKA_BOOTSTRAP_SERVERS","value":"kafka.data-platform-infra:9092"}],"image":"apache/kafka:4.2.0","name":"kafka-bootstrap","volumeMounts":[{"mountPath":"/config/kafka","name":"repo-source","subPath":"config/kafka"},{"mountPath":"/bootstrap-tools","name":"kafka-bootstrap-tools"}]}],"initContainers":[{"command":["/bin/sh","-c","git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"],"env":[{"name":"GIT_REPO_URL","valueFrom":{"configMapKeyRef":{"key":"GIT_REPO_URL","name":"platform-config"}}},{"name":"GIT_REPO_REF","valueFrom":{"configMapKeyRef":{"key":"GIT_REPO_REF","name":"platform-config"}}}],"image":"alpine/git:2.47.2","name":"repo-sync","volumeMounts":[{"mountPath":"/workspace","name":"repo-source"}]},{"command":["/bin/sh","-lc","attempt=0\nuntil /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka.data-platform-infra:9092 --list \u003e/dev/null 2\u003e\u00261; do\n  attempt=$((attempt + 1))\n  if [ \"$attempt\" -ge 60 ]; then\n    echo \"Kafka admin endpoint did not become ready in time.\" \u003e\u00262\n    exit 1\n  fi\n  sleep 2\ndone\n"],"image":"apache/kafka:4.2.0","name":"wait-for-kafka"}],"restartPolicy":"OnFailure","volumes":[{"emptyDir":{},"name":"repo-source"},{"configMap":{"defaultMode":493,"name":"kafka-bootstrap-tools"},"name":"kafka-bootstrap-tools"}]}}}}
+  creationTimestamp: "2026-03-26T16:07:13Z"
+  generation: 1
+  labels:
+    app.kubernetes.io/name: kafka-bootstrap
+    batch.kubernetes.io/controller-uid: ecdd4359-ccfe-4361-beac-60d504fc5701
+    batch.kubernetes.io/job-name: kafka-bootstrap
+    controller-uid: ecdd4359-ccfe-4361-beac-60d504fc5701
+    job-name: kafka-bootstrap
+    platform.example.io/stack: ingestion
+  name: kafka-bootstrap
+  namespace: data-platform-infra
+  resourceVersion: "397793"
+  uid: ecdd4359-ccfe-4361-beac-60d504fc5701
+spec:
+  backoffLimit: 6
+  completionMode: NonIndexed
+  completions: 1
+  manualSelector: false
+  parallelism: 1
+  podReplacementPolicy: TerminatingOrFailed
+  selector:
+    matchLabels:
+      batch.kubernetes.io/controller-uid: ecdd4359-ccfe-4361-beac-60d504fc5701
+  suspend: false
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-bootstrap
+        batch.kubernetes.io/controller-uid: ecdd4359-ccfe-4361-beac-60d504fc5701
+        batch.kubernetes.io/job-name: kafka-bootstrap
+        controller-uid: ecdd4359-ccfe-4361-beac-60d504fc5701
+        job-name: kafka-bootstrap
+        platform.example.io/stack: ingestion
+    spec:
+      containers:
+      - command:
+        - /bin/sh
+        - /bootstrap-tools/bootstrap-topics.sh
+        env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: kafka.data-platform-infra:9092
+        image: apache/kafka:4.2.0
+        imagePullPolicy: IfNotPresent
+        name: kafka-bootstrap
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /config/kafka
+          name: repo-source
+          subPath: config/kafka
+        - mountPath: /bootstrap-tools
+          name: kafka-bootstrap-tools
+      dnsPolicy: ClusterFirst
+      initContainers:
+      - command:
+        - /bin/sh
+        - -c
+        - git clone --depth 1 --branch "$GIT_REPO_REF" "$GIT_REPO_URL" /workspace
+        env:
+        - name: GIT_REPO_URL
+          valueFrom:
+            configMapKeyRef:
+              key: GIT_REPO_URL
+              name: platform-config
+        - name: GIT_REPO_REF
+          valueFrom:
+            configMapKeyRef:
+              key: GIT_REPO_REF
+              name: platform-config
+        image: alpine/git:2.47.2
+        imagePullPolicy: IfNotPresent
+        name: repo-sync
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /workspace
+          name: repo-source
+      - command:
+        - /bin/sh
+        - -lc
+        - |
+          attempt=0
+          until /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka.data-platform-infra:9092 --list >/dev/null 2>&1; do
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge 60 ]; then
+              echo "Kafka admin endpoint did not become ready in time." >&2
+              exit 1
+            fi
+            sleep 2
+          done
+        image: apache/kafka:4.2.0
+        imagePullPolicy: IfNotPresent
+        name: wait-for-kafka
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      restartPolicy: OnFailure
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - emptyDir: {}
+        name: repo-source
+      - configMap:
+          defaultMode: 493
+          name: kafka-bootstrap-tools
+        name: kafka-bootstrap-tools
+status:
+  completionTime: "2026-03-26T16:27:32Z"
+  conditions:
+  - lastProbeTime: "2026-03-26T16:27:32Z"
+    lastTransitionTime: "2026-03-26T16:27:32Z"
+    message: Reached expected number of succeeded pods
+    reason: CompletionsReached
+    status: "True"
+    type: SuccessCriteriaMet
+  - lastProbeTime: "2026-03-26T16:27:32Z"
+    lastTransitionTime: "2026-03-26T16:27:32Z"
+    message: Reached expected number of succeeded pods
+    reason: CompletionsReached
+    status: "True"
+    type: Complete
+  ready: 0
+  startTime: "2026-03-26T16:07:13Z"
+  succeeded: 1
+  terminating: 0
+  uncountedTerminatedPods: {}

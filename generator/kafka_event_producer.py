@@ -87,12 +87,18 @@ class SessionEventProducer:
         return buffer.getvalue()
 
     def publish(self, events: list[dict[str, Any]]) -> int:
-        for event in events:
+        total = len(events)
+        progress_every = max(1, min(10_000, total // 10 if total > 0 else 1))
+        for index, event in enumerate(events, start=1):
             key_payload = {"event_uuid": event["event_uuid"]}
             key_bytes = self._encode(self.key_schema_id, self.key_schema, key_payload)
             value_bytes = self._encode(self.value_schema_id, self.value_schema, event)
             self.producer.send(self.topic, key=key_bytes, value=value_bytes)
+            if index == 1 or index % progress_every == 0 or index == total:
+                print(f"[kafka] queued {index}/{total} events", flush=True)
+        print("[kafka] flushing producer", flush=True)
         self.producer.flush()
+        print("[kafka] flush complete", flush=True)
         return len(events)
 
 

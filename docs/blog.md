@@ -250,3 +250,5 @@ Streaming data
 When done well, the platform does more than explain what happened.
 
 It helps the business decide **what to do next real time.**
+> Note
+> This blog post describes the pre-split combined data-and-ML platform. Training, model registry, inference, experimentation, and Redis-backed online features are moving to a sibling ML platform repository. Use [ML Platform Split](./ml_platform_split.md) for the current repository boundary.

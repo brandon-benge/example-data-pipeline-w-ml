@@ -59,6 +59,7 @@ fi
 submit_job() {
   job_name="$1"
   module_name="$2"
+  parallelism="${FLINK_JOB_PARALLELISM:-4}"
 
   set -- /opt/flink/bin/flink run \
     --detached \
@@ -69,7 +70,7 @@ submit_job() {
     -pyclientexec python3 \
     -pyexec python3 \
     -pyfs /opt/flink/usrlib/repo,/opt/flink/usrlib/repo/flink/.deps \
-    -p 1
+    -p "$parallelism"
 
   if [ -n "${FLINK_PIPELINE_JARS:-}" ]; then
     old_ifs="$IFS"
@@ -90,6 +91,7 @@ submit_job() {
 job_name="$1"
 module_name="$2"
 poll_seconds="${FLINK_JOB_POLL_SECONDS:-15}"
+retry_seconds="${FLINK_SUBMIT_RETRY_SECONDS:-120}"
 
 while true; do
   wait_for_jobmanager
@@ -98,7 +100,13 @@ while true; do
     echo "Flink job running: $job_name"
   else
     echo "Flink job missing, submitting: $job_name"
-    submit_job "$job_name" "$module_name"
+    if submit_job "$job_name" "$module_name"; then
+      :
+    else
+      echo "Flink job submission failed; retrying in ${retry_seconds}s" >&2
+      sleep "$retry_seconds"
+      continue
+    fi
   fi
 
   sleep "$poll_seconds"

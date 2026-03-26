@@ -104,3 +104,5 @@ This architecture intentionally chooses a clear separation of concerns:
 - ML training from dbt-built Iceberg feature tables for point-in-time safety
 
 It is not the smallest possible stack, but it is the smallest stack that still tells a credible modern platform story with explicit CDC ingestion, governed medallion processing, BI serving, and containerized ML inference.
+> Note
+> This document still contains pre-split ML-platform discussion. Training, model registry, inference, experimentation, and Redis-backed online features are moving to a sibling ML platform repository. Use [ML Platform Split](./ml_platform_split.md) for the current repository boundary.

@@ -1,0 +1,81 @@
+$ kubectl -n data-platform-infra describe pod kafka-0
+Name:             kafka-0
+Namespace:        data-platform-infra
+Priority:         0
+Service Account:  default
+Node:             basic-compute-nodepool-day90/10.118.0.4
+Start Time:       Thu, 26 Mar 2026 12:41:21 -0400
+Labels:           app.kubernetes.io/name=kafka
+                  apps.kubernetes.io/pod-index=0
+                  controller-revision-hash=kafka-69dd8956bd
+                  platform.example.io/stack=ingestion
+                  statefulset.kubernetes.io/pod-name=kafka-0
+                  topology.kubernetes.io/region=tor1
+Annotations:      <none>
+Status:           Running
+IP:               10.108.11.146
+IPs:
+  IP:           10.108.11.146
+Controlled By:  StatefulSet/kafka
+Containers:
+  kafka:
+    Container ID:   containerd://fe0e070d64442ecbd646b3419ac8e5de2a06160df27a89c305efe5156e555806
+    Image:          apache/kafka:4.2.0
+    Image ID:       docker.io/apache/kafka@sha256:9516fb7634bad307d17c33b589fde9023003b0cb761374f500002b980a3149b9
+    Ports:          9092/TCP, 19092/TCP, 9093/TCP
+    Host Ports:     0/TCP, 0/TCP, 0/TCP
+    State:          Running
+      Started:      Thu, 26 Mar 2026 12:41:39 -0400
+    Ready:          True
+    Restart Count:  0
+    Readiness:      tcp-socket :9092 delay=10s timeout=2s period=5s #success=1 #failure=12
+    Environment:
+      KAFKA_NODE_ID:                                   1
+      CLUSTER_ID:                                      <set to the key 'KAFKA_CLUSTER_ID' of config map 'platform-config'>  Optional: false
+      KAFKA_PROCESS_ROLES:                             broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS:                  1@kafka-0.kafka-headless.data-platform-infra.svc.cluster.local:9093
+      KAFKA_LISTENERS:                                 INTERNAL://:9092,EXTERNAL://:19092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS:                      INTERNAL://kafka.data-platform-infra:9092,EXTERNAL://localhost:19092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP:            INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES:                 CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME:                INTERNAL
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE:                 false
+      KAFKA_LOG_DIRS:                                  /var/lib/kafka/data
+      KAFKA_NUM_PARTITIONS:                            1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR:          1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR:  1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR:             1
+    Mounts:
+      /var/lib/kafka from kafka-persistent (rw)
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-h5pvx (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       True 
+  ContainersReady             True 
+  PodScheduled                True 
+Volumes:
+  kafka-persistent:
+    Type:       PersistentVolumeClaim (a reference to a PersistentVolumeClaim in the same namespace)
+    ClaimName:  kafka-data
+    ReadOnly:   false
+  kube-api-access-h5pvx:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type     Reason                  Age   From                     Message
+  ----     ------                  ----  ----                     -------
+  Normal   Scheduled               54s   default-scheduler        Successfully assigned data-platform-infra/kafka-0 to basic-compute-nodepool-day90
+  Warning  FailedAttachVolume      54s   attachdetach-controller  Multi-Attach error for volume "pvc-51c8702b-43c3-43b7-8dd5-9714d0e0e3b6" Volume is already exclusively attached to one node and can't be attached to another
+  Normal   SuccessfulAttachVolume  37s   attachdetach-controller  AttachVolume.Attach succeeded for volume "pvc-51c8702b-43c3-43b7-8dd5-9714d0e0e3b6"
+  Normal   Pulled                  36s   kubelet                  spec.containers{kafka}: Container image "apache/kafka:4.2.0" already present on machine and can be accessed by the pod
+  Normal   Created                 36s   kubelet                  spec.containers{kafka}: Container created
+  Normal   Started                 36s   kubelet                  spec.containers{kafka}: Container started

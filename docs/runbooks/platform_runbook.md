@@ -1,122 +1,101 @@
 # Platform Runbook
 
+This runbook targets the current repository boundary and Kubernetes deployment surface.
+
+- Canonical manifest: [k8s/platform.yaml](../../k8s/platform.yaml)
+- Preferred operator entrypoint: [tools/run_stack_workflow.sh](../../tools/run_stack_workflow.sh)
+- Low-level stack helper: [tools/manage_stack.py](../../tools/manage_stack.py)
+- Validator: [tools/validate_pipeline.py](../../tools/validate_pipeline.py)
+
+For the current repository split, this repo owns ingestion, Bronze, Silver, Gold, metadata, and BI. ML training, model storage and registry behavior, hot feature serving, and model hosting now live in [`example-model-routing`](https://github.com/brandon-benge/example-model-routing).
+
 ## Purpose
 
-This runbook defines the operator commands referenced by the architecture for bringing up the local platform, loading data, running jobs, validating outputs, and troubleshooting common issues.
+Use this runbook to:
 
-## Automated stack-first workflow script
+- start the platform in the supported order
+- seed source data
+- inspect Kafka, Flink, Spark, dbt, Trino, metadata, and Superset
+- validate Bronze, Silver, Gold, and published offline feature datasets
+- troubleshoot the current data-platform deployment
 
-The preferred operator entry point is now the stack-first automation script. The VS Code pipeline tasks call these commands directly:
+## Preferred Workflow
+
+The supported operator flow is the staged wrapper:
 
 ```bash
 bash tools/run_stack_workflow.sh --stop-at ingestion
 bash tools/run_stack_workflow.sh --stop-at stream-processing
 bash tools/run_stack_workflow.sh --stop-at batch
 bash tools/run_stack_workflow.sh --stop-at analytics
-bash tools/run_stack_workflow.sh --stop-at ml
 ```
 
-The script orchestrates stack startup, generator seeding on ingestion, validation retries, and stack shutdown for each stage.
-
-## Command reference for retired tasks
-
-The commands below remain documented here even though they were removed from VS Code tasks to keep tasks.json lean.
-
-Platform commands:
+Before `stream-processing`, the workflow validates the local Iceberg Kafka Connect
+runtime JARs, builds them locally from upstream source if needed, ensures
+`pvc/kafka-connect-plugin-cache` exists, and uploads the JARs before the full
+platform manifest is applied.
 
 ```bash
-docker compose down
-docker compose down -v
-docker compose logs kafka-bootstrap
-docker compose logs superset-bootstrap
+bash tools/preload_connect_plugin_cache.sh
 ```
 
-Stack commands:
+The wrapper:
+
+1. Applies the Kubernetes platform through `tools/manage_stack.py up <stage>`.
+2. Waits for runtime readiness with `tools/validate_pipeline.py --stack <stage> --stability-seconds 0 ...`.
+3. Opens only the workstation port-forwards needed for the current stage.
+4. Runs the synthetic generator during `ingestion`.
+5. Runs full validation for the stage after the stage is ready.
+6. Reuses the same deployed platform between stages.
+
+It is staged by readiness and validation, not by tearing services down between phases.
+
+## Stage Map
+
+- `ingestion`
+  - healthy services: Postgres, Kafka, Schema Registry, Kafka Connect source
+  - host access: Postgres `5432`, Kafka `19092`, Schema Registry `8081`
+  - extra action: runs the synthetic generator from the host
+- `stream-processing`
+  - healthy services: Kafka Connect sinks, MinIO, Iceberg REST, Flink, Trino
+  - host access: Flink UI `8082`, Trino `8080`
+  - prerequisite: `pvc/kafka-connect-plugin-cache` already contains the Iceberg Kafka Connect plugin jars
+- `batch`
+  - healthy services: Spark, dbt, metadata, Trino, MinIO, Iceberg REST
+  - host access: metadata `9002`
+- `analytics`
+  - healthy services: Superset, Trino, metadata, MinIO, Iceberg REST
+  - host access: Superset `8088`
+
+## Startup And Shutdown
+
+Preferred startup:
 
 ```bash
-python3 tools/manage_stack.py list
-python3 tools/manage_stack.py stop streaming
-python3 tools/manage_stack.py stop batch
-python3 tools/manage_stack.py stop analytics
-python3 tools/manage_stack.py stop ml
+bash tools/run_stack_workflow.sh --stop-at analytics
 ```
 
-Generator command:
+Preferred teardown:
 
 ```bash
-source .venv/bin/activate && python3 generator/app.py --config params.yaml --mode both
+bash tools/run_stack_workflow.sh destroy
 ```
 
-dbt and ML commands:
+Low-level teardown:
 
 ```bash
-docker compose exec dbt dbt debug
-docker compose exec dbt dbt run
-docker compose exec dbt dbt test
-docker compose exec dbt dbt build
-docker compose exec dbt dbt build --select path:models/staging
-docker compose exec dbt dbt build --select path:models/marts/dimensions path:models/marts/facts
-docker compose exec dbt dbt build --select path:models/marts/marts
-docker compose exec dbt dbt build --select path:models/semantic
-docker compose exec dbt dbt build --select features
-docker compose logs dbt-scheduler
-docker compose logs -f dbt-scheduler
-docker compose logs -f ml-training
-curl http://localhost:8010/health
-curl -X POST http://localhost:8010/score/customer_purchase -H 'Content-Type: application/json' -d '{"customer_id": 123, "write_redis": true}'
-curl -X POST http://localhost:8010/score/campaign_success -H 'Content-Type: application/json' -d '{"campaign_id": 456, "write_redis": true}'
-curl -X POST http://localhost:8010/score/advertiser_budget_expansion -H 'Content-Type: application/json' -d '{"advertiser_id": 789, "write_redis": true}'
+kubectl delete -f k8s/platform.yaml --ignore-not-found=true
 ```
 
-Validation commands:
+## Stack Commands
 
-```bash
-python3 tools/validate_pipeline.py
-python3 tools/validate_pipeline.py --stack streaming
-python3 tools/validate_pipeline.py --stack batch
-python3 tools/validate_pipeline.py --stack analytics
-python3 tools/validate_pipeline.py --stack ml
-curl http://localhost:8083/connectors/postgres-cdc-connector/status
-curl http://localhost:8081/subjects
-curl http://localhost:8080/v1/info
-curl http://localhost:9000/minio/health/live
-curl http://localhost:8088/health
-docker compose exec kafka /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
-docker compose exec redis redis-cli HGETALL features:customer:123:v1
-docker compose exec redis redis-cli TTL features:customer:123:v1
-```
-
-## Startup and shutdown
-
-Start the full local stack:
-
-```bash
-docker compose up -d
-```
-
-Stop the full local stack:
-
-```bash
-docker compose down
-```
-
-Reset local state:
-
-```bash
-docker compose down -v
-```
-
-## Start one logical stack at a time
-
-If you want to conserve laptop CPU and memory, use the stack wrapper instead of starting the whole platform. The wrapper intentionally starts only one logical slice plus its required dependencies.
-
-List the available stacks:
+List stacks:
 
 ```bash
 python3 tools/manage_stack.py list
 ```
 
-Start one stack:
+Start a stack directly:
 
 ```bash
 python3 tools/manage_stack.py up ingestion
@@ -124,10 +103,9 @@ python3 tools/manage_stack.py up stream-processing
 python3 tools/manage_stack.py up streaming
 python3 tools/manage_stack.py up batch
 python3 tools/manage_stack.py up analytics
-python3 tools/manage_stack.py up ml
 ```
 
-Stop one stack:
+Stop a stack directly:
 
 ```bash
 python3 tools/manage_stack.py stop ingestion
@@ -135,68 +113,130 @@ python3 tools/manage_stack.py stop stream-processing
 python3 tools/manage_stack.py stop streaming
 python3 tools/manage_stack.py stop batch
 python3 tools/manage_stack.py stop analytics
-python3 tools/manage_stack.py stop ml
 ```
-
-`stop` halts the long-running services in the logical stack and removes the stack's bootstrap-style orchestration containers, including one-shot `*-bootstrap` services and the Flink job-submission services.
 
 Inspect one stack:
 
 ```bash
 python3 tools/manage_stack.py ps streaming
 python3 tools/manage_stack.py ps --all streaming
-python3 tools/manage_stack.py logs -f batch
+python3 tools/manage_stack.py logs batch
+python3 tools/manage_stack.py logs --follow analytics
 ```
 
-`ps` shows only running containers by default. Use `--all` to include exited bootstrap/orchestration containers.
+Recommended stack usage:
 
-Recommended usage on a laptop:
+- `ingestion`: source-system intake into Kafka
+- `stream-processing`: Kafka-to-Bronze processing
+- `streaming`: combined ingestion plus stream-processing
+- `batch`: Spark, dbt, metadata, and published Iceberg datasets
+- `analytics`: Superset over curated Gold data
 
-- `ingestion`: Postgres, Kafka, Schema Registry, and the Kafka Connect source worker for CDC and event intake
-- `stream-processing`: Postgres, Kafka, Schema Registry, the Kafka Connect sink worker, Flink, Redis, Trino, MinIO, and Iceberg REST
-- `streaming`: Postgres, Kafka, Schema Registry, Kafka Connect source worker, Kafka Connect sink worker, Flink, Redis, Trino, MinIO, Iceberg REST
-- `batch`: Postgres, Spark, dbt, Trino, metadata, MinIO, Iceberg REST
-- `analytics`: Postgres, Trino, Superset, metadata, MinIO, Iceberg REST
-- `ml`: Postgres, Trino, Redis, MinIO, metadata, the one-shot `ml-training` container, and the `ml-inference` API service
+## Manual Access
 
-The stack commands are designed for one-at-a-time operation. Shared services like MinIO and Iceberg REST appear in multiple stacks, so stopping one stack may also stop services another stack was using.
-
-`streaming` remains the combined convenience stack. Use `ingestion` when you only need source-system intake into Kafka. Use `stream-processing` when you only need Kafka-to-Bronze/Redis processing. `stream-processing` no longer pulls up the Debezium source worker transitively.
-
-The current local catalog design also shares the existing Postgres instance and database with the Iceberg REST catalog metadata backend. That is intentional for laptop simplicity, but it means `stream-processing` also depends on Postgres even when it is not reading OLTP tables directly. In a more realistic setup, the catalog should use a separate database from the OLTP source tables.
-
-For a quick A/B test of the Iceberg REST metadata backend, you can temporarily override the catalog JDBC URI before recreating dependent services:
+Primary interfaces:
 
 ```bash
-export ICEBERG_CATALOG_URI='jdbc:sqlite:/tmp/iceberg_rest_mode.db'
-docker compose up -d --force-recreate iceberg-rest trino kafka-connect-sinks kafka-connect-sinks-bootstrap
+kubectl -n data-platform-serve port-forward svc/trino 8080:8080
+kubectl -n data-platform-process port-forward svc/flink-jobmanager 8082:8081
+kubectl -n data-platform-serve port-forward svc/superset 8088:8088
 ```
 
-Return to the default Postgres-backed catalog by unsetting the override and recreating the same services:
+Optional debugging endpoints:
 
 ```bash
-unset ICEBERG_CATALOG_URI
-docker compose up -d --force-recreate iceberg-rest trino kafka-connect-sinks kafka-connect-sinks-bootstrap
+kubectl -n data-platform-infra port-forward svc/schema-registry 8081:8081
+kubectl -n data-platform-govern port-forward svc/metadata 9002:9002
 ```
 
-## Kafka topic creation
-
-Kafka topics are created automatically during `docker compose up` from `config/kafka/topics/*.env` by the compose-managed bootstrap service.
-
-Check the bootstrap service logs if needed:
+Generator access from the host:
 
 ```bash
-docker compose logs kafka-bootstrap
+kubectl -n data-platform-infra port-forward svc/postgres 5432:5432
+kubectl -n data-platform-infra port-forward svc/kafka 19092:19092
+kubectl -n data-platform-infra port-forward svc/schema-registry 8081:8081
 ```
 
-## Kafka Connect connector registration
+## Platform Commands
 
-Kafka Connect registration is managed during `docker compose up` by the source and sink bootstrap services from:
+```bash
+kubectl apply -f k8s/platform.yaml
+kubectl delete -f k8s/platform.yaml --ignore-not-found=true
+kubectl get pods -A
+kubectl -n data-platform-infra logs job/kafka-bootstrap
+kubectl -n data-platform-serve logs job/superset-bootstrap
+```
+
+## Seed Source Data
+
+The synthetic generator is the only component intended to run manually from the host.
+
+Install generator dependencies:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r generator/requirements.txt
+```
+
+Run the generator:
+
+```bash
+python3 generator/app.py --config params.yaml --mode both
+```
+
+If you run it manually, keep Kafka aligned with the external listener:
+
+```bash
+KAFKA_BOOTSTRAP_SERVERS=localhost:19092 python3 generator/app.py --config params.yaml --mode both
+```
+
+## Kafka And Connect
+
+Kafka topics are initialized by the `kafka-bootstrap` job during platform startup.
+
+Check topic bootstrap logs:
+
+```bash
+kubectl -n data-platform-infra logs job/kafka-bootstrap
+```
+
+Capture Kafka broker, PVC, and on-disk metadata state before or during a pressure test:
+
+```bash
+bash tools/capture_kafka_state.sh --label before-pressure
+bash tools/capture_kafka_state.sh --watch --interval 5 --label pressure-watch
+```
+
+The script writes timestamped snapshots under `tmp/kafka-state-captures/` including:
+
+- live topic list and topic descriptions
+- KRaft quorum status and `meta.properties`
+- mounted Kafka data-directory listings and partition directories
+- Kafka pod placement, PVC state, bootstrap-job state, and recent infra events
+- Kafka container logs
+
+Kafka Connect source and sink registration are managed by bootstrap jobs from:
 
 - `config/debezium/connector-postgres.json`
 - `config/debezium/register-connector.sh`
 
-Before connector registration, the compose-managed `iceberg-cdc-bootstrap` service creates the required REST-catalog namespaces and Bronze CDC tables independently of Spark and Flink.
+The sink deployment no longer builds the Iceberg plugin at startup. The helper
+below validates the required JARs, builds them locally from upstream Iceberg if
+they are missing, ensures `pvc/kafka-connect-plugin-cache` exists, and uploads
+the resulting JAR set:
+
+```bash
+bash tools/preload_connect_plugin_cache.sh
+```
+
+If you already have an extracted runtime `lib/` directory, pass it explicitly:
+
+```bash
+bash tools/preload_connect_plugin_cache.sh /path/to/iceberg-kafka-connect-runtime/lib
+```
+
+Before sink registration, the `iceberg-cdc-bootstrap` job creates REST catalog namespaces and Bronze CDC tables.
 
 Check connector status:
 
@@ -206,218 +246,78 @@ curl http://localhost:8084/connectors/postgres-cdc-customer-iceberg-sink/status
 curl http://localhost:8084/connectors/postgres-cdc-order-header-iceberg-sink/status
 ```
 
-The CDC Bronze landing path now uses one Kafka Connect Iceberg sink connector per Postgres source table on a dedicated sink worker. The Debezium source connector runs on a separate Kafka Connect source worker so the initial Postgres snapshot does not compete for memory with the Iceberg sink connectors.
+## Flink
 
-## Seed source data
+Flink handles direct-event Bronze landing in this repo.
 
-The synthetic generator is the only component intended to be run manually:
-
-Install generator dependencies first:
+Check Flink bootstrap logs:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -r generator/requirements.txt
+kubectl -n data-platform-process logs job/flink-bootstrap-bronze-events
 ```
 
-Then run the generator:
+Check the job overview:
 
 ```bash
-python generator/app.py --config params.yaml --mode both
+curl http://localhost:8082/jobs/overview
 ```
 
-The generator runs on your host, so it should use Kafka's external listener on `localhost:19092`.
-That is now the default in the generator config. If you override it manually, keep it aligned:
+## Spark
+
+Spark infrastructure and recurring batch execution run through the `spark` and `spark-bootstrap` deployments.
+
+Check Spark scheduler logs:
 
 ```bash
-KAFKA_BOOTSTRAP_SERVERS=localhost:19092 python generator/app.py --config params.yaml --mode both
+kubectl -n data-platform-process logs deployment/spark-bootstrap
+kubectl -n data-platform-process logs -f deployment/spark-bootstrap
 ```
 
-For generator behavior, rerun semantics, and how to create Kafka events without rewriting Postgres entities, see [../generator.md](../generator.md).
-
-## Run Flink jobs
-
-Flink infrastructure and job submission both start through Docker Compose. Flink is now used for the direct event stream and online features; CDC Bronze landing is handled by Kafka Connect Iceberg sink connectors, one per Postgres source table.
-
-Check the Flink submitter logs if needed:
+Filter logs by pipeline name:
 
 ```bash
-docker compose logs flink-bootstrap-bronze-events
-docker compose logs flink-bootstrap-online-features
+kubectl -n data-platform-process logs deployment/spark-bootstrap | rg "bronze_to_silver_dimensions"
+kubectl -n data-platform-process logs deployment/spark-bootstrap | rg "bronze_to_silver_facts"
+kubectl -n data-platform-process logs deployment/spark-bootstrap | rg "silver_aggregates"
+kubectl -n data-platform-process logs deployment/spark-bootstrap | rg "build_ml_features"
 ```
 
-## Run Spark Silver jobs
+The `build_ml_features` Spark output still belongs to this repo because it publishes offline feature datasets that downstream ML systems consume.
 
-Spark infrastructure and batch execution both start through Docker Compose. The `spark-bootstrap` service runs the Silver, aggregate, and offline feature build jobs on a recurring interval through the long-lived Spark scheduler.
+## dbt
 
-Check Spark batch logs if needed:
+The `dbt` deployment is available for manual commands, and `dbt-scheduler` runs recurring chunked builds.
+
+Inspect scheduler logs:
 
 ```bash
-docker compose logs spark-bootstrap
+kubectl -n data-platform-process logs deployment/dbt-scheduler
+kubectl -n data-platform-process logs -f deployment/dbt-scheduler
 ```
 
-Follow the live Spark scheduler logs:
+Run dbt commands manually:
 
 ```bash
-docker compose logs -f spark-bootstrap
+kubectl -n data-platform-process exec deploy/dbt -- dbt debug
+kubectl -n data-platform-process exec deploy/dbt -- dbt run
+kubectl -n data-platform-process exec deploy/dbt -- dbt test
+kubectl -n data-platform-process exec deploy/dbt -- dbt build
 ```
 
-Filter Spark logs by scheduled pipeline name:
+Run selected parts of the project:
 
 ```bash
-docker compose logs spark-bootstrap | rg "bronze_to_silver_dimensions"
-docker compose logs spark-bootstrap | rg "bronze_to_silver_facts"
-docker compose logs spark-bootstrap | rg "silver_aggregates"
-docker compose logs spark-bootstrap | rg "build_ml_features"
+kubectl -n data-platform-process exec deploy/dbt -- dbt build --select staging
+kubectl -n data-platform-process exec deploy/dbt -- dbt build --select dimensions
+kubectl -n data-platform-process exec deploy/dbt -- dbt build --select facts
+kubectl -n data-platform-process exec deploy/dbt -- dbt build --select marts
+kubectl -n data-platform-process exec deploy/dbt -- dbt build --select features
+kubectl -n data-platform-process exec deploy/dbt -- dbt build --select semantic
 ```
 
-The scheduler emits `Running pipeline <name>` and `Pipeline <name> failed` log lines for each pipeline, so these filtered commands are the per-job view for Spark in this repo.
+In this repo, `features` still materializes offline feature tables into `iceberg.silver` for downstream consumers.
 
-Check the Spark UI while the scheduler is running:
-
-```bash
-open http://localhost:4040
-```
-
-## Run dbt
-
-The `dbt` container starts through Docker Compose for manual commands, and the `dbt-scheduler` container runs chunked dbt builds automatically every 2 minutes. The scheduler runs the chunks below with a `0.1` second pause between them:
-
-```bash
-dbt build --select staging
-sleep 0.1
-dbt build --select dimensions
-sleep 0.1
-dbt build --select facts
-sleep 0.1
-dbt build --select marts
-sleep 0.1
-dbt build --select features
-sleep 0.1
-dbt build --select semantic
-```
-
-Inspect the scheduler logs if needed:
-
-```bash
-docker compose logs dbt-scheduler
-docker compose logs -f dbt-scheduler
-```
-
-Run dbt commands inside the container:
-
-```bash
-docker compose exec dbt dbt debug
-docker compose exec dbt dbt run
-docker compose exec dbt dbt test
-docker compose exec dbt dbt build
-```
-
-Use `dbt run` if you only want to materialize models. Use `dbt build` if you want the normal dbt workflow of models plus tests.
-
-The repository dbt project under `dbt/` primarily targets the `iceberg.gold` schema, with the `features` selector materialized into `iceberg.silver`. It reads from Silver-only inputs through the Spark session adapter configured in `config/dbt/profiles.yml`.
-
-If you want to run the same chunked flow manually instead of waiting for the scheduler:
-
-```bash
-docker compose exec dbt dbt build --select staging
-docker compose exec dbt dbt build --select dimensions
-docker compose exec dbt dbt build --select facts
-docker compose exec dbt dbt build --select marts
-docker compose exec dbt dbt build --select features
-docker compose exec dbt dbt build --select semantic
-```
-
-If you want to run only part of the project ad hoc:
-
-```bash
-docker compose exec dbt dbt run --select marts
-docker compose exec dbt dbt test --select staging
-```
-
-## Run ML training
-
-ML code is implemented under `ml/`. dbt now builds the offline ML feature tables in Iceberg, and the training flow reads those tables directly. Training still writes local artifacts under `ml/artifacts/`, while the canonical artifact copies are published to the MinIO `ml-artifacts` bucket with version metadata written to `iceberg.silver.ml_model_registry`. The runtime inference service does not read the local artifact directory; it resolves the latest manifest from `iceberg.silver.ml_model_registry` and downloads artifacts from MinIO at runtime.
-
-Build the dbt-managed ML feature tables from the batch stack:
-
-```bash
-docker compose exec dbt dbt build --select features
-```
-
-The `features` selector materializes:
-
-- `iceberg.silver.customer_purchase_features_v1`
-- `iceberg.silver.customer_purchase_realtime_features_v1`
-- `iceberg.silver.campaign_success_features_v1`
-- `iceberg.silver.advertiser_budget_features_v1`
-- `iceberg.silver.ml_model_registry` is populated by the training workflow, not dbt
-
-Run the compose-managed ML training container:
-
-```bash
-docker compose up ml-training
-```
-
-Follow the training logs if needed:
-
-```bash
-docker compose logs -f ml-training
-```
-
-The training container runs all three training steps:
-
-```bash
-curl http://localhost:8010/health
-```
-
-The ML runtime now follows a more production-shaped split:
-
-- dbt builds offline feature tables
-- `ml-training` trains all configured models
-- model artifacts are published to MinIO and registered in Iceberg
-- `ml-inference` serves model-specific REST endpoints
-
-Concretely, `ml-inference` now:
-
-- loads the latest model artifacts from the Iceberg registry and MinIO
-- fetches live customer features from Redis for request-time customer scoring
-- hydrates offline campaign and advertiser context from Iceberg through Trino
-- serves separate endpoints for each scoring use case
-
-- `POST /score/customer_purchase`
-- `POST /score/campaign_success`
-- `POST /score/advertiser_budget_expansion`
-
-Example inference calls:
-
-```bash
-curl http://localhost:8010/health
-
-curl -X POST http://localhost:8010/score/customer_purchase \
-  -H 'Content-Type: application/json' \
-  -d '{"customer_id": 123, "write_redis": true}'
-
-curl -X POST http://localhost:8010/score/campaign_success \
-  -H 'Content-Type: application/json' \
-  -d '{"campaign_id": 456, "write_redis": true}'
-
-curl -X POST http://localhost:8010/score/advertiser_budget_expansion \
-  -H 'Content-Type: application/json' \
-  -d '{"advertiser_id": 789, "write_redis": true}'
-```
-
-## Superset bootstrap
-
-Superset metadata initialization, admin-user creation, Trino connection setup, and dashboard import are all handled during `docker compose up` by the compose-managed bootstrap service.
-
-Check the bootstrap logs if needed:
-
-```bash
-docker compose logs superset-bootstrap
-```
-
-## Validation commands
+## Validation
 
 Run the end-to-end validator:
 
@@ -425,101 +325,76 @@ Run the end-to-end validator:
 python3 tools/validate_pipeline.py
 ```
 
-Run validation for only one logical stack:
+Run validation for one logical stack:
 
 ```bash
 python3 tools/validate_pipeline.py --stack streaming
 python3 tools/validate_pipeline.py --stack batch
 python3 tools/validate_pipeline.py --stack analytics
-python3 tools/validate_pipeline.py --stack ml
 ```
 
 Stack validation scope:
 
 - `streaming`: streaming services plus Bronze tables
-- `batch`: batch services plus Silver, ML feature, and Gold tables
+- `batch`: batch services plus Silver, offline feature, and Gold tables
 - `analytics`: analytics services plus Gold tables
-- `ml`: ML assets, registry metadata, Iceberg-backed ML feature tables, the training container, and the inference service
 
-Skip a section if you only want part of the validation surface:
+Skip sections if needed:
 
 ```bash
-python3 tools/validate_pipeline.py --skip redis --skip metadata
+python3 tools/validate_pipeline.py --skip metadata
+python3 tools/validate_pipeline.py --skip dbt
+```
+
+Basic service checks:
+
+```bash
+curl http://localhost:8081/subjects
+curl http://localhost:8080/v1/info
+curl http://localhost:8088/health
+curl http://localhost:9000/minio/health/live
 ```
 
 Check Kafka topics:
 
 ```bash
-kafka-topics --bootstrap-server localhost:19092 --list
+kubectl -n data-platform-infra exec statefulset/kafka -c kafka -- /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
 ```
-
-Check Schema Registry subjects:
-
-```bash
-curl http://localhost:8081/subjects
-```
-
-Check Trino:
-
-```bash
-curl http://localhost:8080/v1/info
-```
-
-Check MinIO:
-
-```bash
-curl http://localhost:9000/minio/health/live
-```
-
-Check Superset:
-
-```bash
-curl http://localhost:8088/health
-```
-
-## Redis validation
-
-Inspect a customer feature record:
-
-```bash
-docker compose exec redis redis-cli HGETALL features:customer:123:v1
-```
-
-Check TTL:
-
-```bash
-docker compose exec redis redis-cli TTL features:customer:123:v1
-```
-
-`ttl_seconds` inside the record documents the intended TTL. Redis key expiry is enforced separately with `EXPIRE`.
 
 ## Troubleshooting
 
 If topics are missing:
-- rerun `docker compose up kafka-bootstrap`
+
+- rerun `kubectl delete job -n data-platform-infra kafka-bootstrap && kubectl apply -f k8s/platform.yaml`
 - verify `config/kafka/topics/*.env` files are present and valid
 
 If CDC is not flowing:
-- check the connector status endpoint
-- inspect Postgres replication/WAL settings
+
+- check connector status endpoints
+- inspect Postgres replication and WAL settings
 - confirm Kafka Connect can reach `postgres:5432`
 
-If direct events fail schema validation:
-- inspect `dlq.events.session_event_schema`
-- verify the subject exists in Schema Registry
+If Bronze data is missing:
 
-If Spark output is missing:
-- inspect the Spark container logs
-- verify the expected Silver and feature tables exist in the Iceberg catalog
+- inspect `kafka-connect-sinks` and `flink-bootstrap-bronze-events`
+- verify the expected Bronze Iceberg tables exist through Trino
 
-If Redis features are missing:
-- check Flink job health
-- verify the entity key exists in source events
-- confirm the key has not expired
+If Spark outputs are missing:
+
+- inspect `spark-bootstrap` logs
+- verify Silver tables exist in `iceberg.silver`
+
+If dbt outputs are missing:
+
+- inspect `dbt-scheduler` logs
+- run `dbt build --select ...` manually inside the dbt deployment
 
 If dashboards are missing:
-- inspect `docker compose logs superset-bootstrap`
 
-If ML artifacts are missing:
-- inspect `ml/artifacts/` for dataset snapshots, model files, metrics, and manifests
-- confirm the expected Iceberg-backed ML feature tables were materialized upstream
+- inspect `kubectl -n data-platform-serve logs job/superset-bootstrap`
+
+If offline feature tables are missing:
+
+- inspect Spark logs for `build_ml_features`
+- run `kubectl -n data-platform-process exec deploy/dbt -- dbt build --select features`
+- verify the downstream ML platform is consuming the right Iceberg tables rather than expecting this repo to host inference or Redis-serving paths

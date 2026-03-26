@@ -1,0 +1,7 @@
+$ kubectl -n data-platform-infra exec statefulset/kafka -c kafka -- sh -lc 'cat /var/lib/kafka/data/meta.properties'
+#
+#Thu Mar 26 16:41:41 GMT 2026
+cluster.id=4L6g3nShT-eMCtK--X86sw
+directory.id=U_XvvLIQ6rmZWPVVNf1tww
+node.id=1
+version=1

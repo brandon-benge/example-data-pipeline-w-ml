@@ -1,0 +1,2 @@
+$ kubectl -n data-platform-infra exec statefulset/kafka -c kafka -- sh -lc '/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list'
+__consumer_offsets

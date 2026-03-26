@@ -268,7 +268,7 @@ def configure_table_environment(table_env: TableEnvironment, job_name: str) -> N
     config = table_env.get_config().get_configuration()
     config.set_string("pipeline.name", job_name)
     config.set_string("table.local-time-zone", "UTC")
-    config.set_string("parallelism.default", env("FLINK_PARALLELISM", "1"))
+    config.set_string("parallelism.default", env("FLINK_PARALLELISM", "4"))
     config.set_string("execution.checkpointing.interval", env("FLINK_CHECKPOINT_INTERVAL", "60 s"))
     config.set_string("execution.checkpointing.mode", "EXACTLY_ONCE")
     config.set_string("execution.checkpointing.min-pause", env("FLINK_CHECKPOINT_MIN_PAUSE", "30 s"))
@@ -305,11 +305,11 @@ def register_iceberg_catalog(table_env: TableEnvironment) -> None:
         CREATE CATALOG iceberg WITH (
             'type' = 'iceberg',
             'catalog-type' = 'rest',
-            'uri' = '{env("ICEBERG_REST_URI", "http://iceberg-rest:8181")}',
+            'uri' = '{env("ICEBERG_REST_URI", "http://iceberg-rest.data-platform-infra:8181")}',
             'warehouse' = '{env("ICEBERG_WAREHOUSE", "s3://warehouse/")}',
             'property-version' = '1',
             'io-impl' = 'org.apache.iceberg.aws.s3.S3FileIO',
-            's3.endpoint' = '{env("S3_ENDPOINT", "http://minio:9000")}',
+            's3.endpoint' = '{env("S3_ENDPOINT", "http://minio.data-platform-infra:9000")}',
             's3.region' = '{env("AWS_REGION", "us-east-1")}',
             's3.path-style-access' = 'true',
             's3.access-key-id' = '{env("AWS_ACCESS_KEY_ID", "minio")}',
@@ -393,7 +393,7 @@ def create_raw_kafka_source_table(
         ) WITH (
             'connector' = 'kafka',
             'topic' = '{topic}',
-            'properties.bootstrap.servers' = '{env("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")}',
+            'properties.bootstrap.servers' = '{env("KAFKA_BOOTSTRAP_SERVERS", "kafka.data-platform-infra:9092")}',
             'properties.group.id' = '{group_id}',
             'scan.startup.mode' = 'earliest-offset',
             'key.format' = 'raw',
@@ -422,7 +422,7 @@ def create_json_kafka_sink(table_env: TableEnvironment, table_name: str, topic: 
         ) WITH (
             'connector' = 'kafka',
             'topic' = '{topic}',
-            'properties.bootstrap.servers' = '{env("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")}',
+            'properties.bootstrap.servers' = '{env("KAFKA_BOOTSTRAP_SERVERS", "kafka.data-platform-infra:9092")}',
             'key.format' = 'raw',
             'key.fields' = 'dlq_key',
             'value.format' = 'json',

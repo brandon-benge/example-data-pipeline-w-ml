@@ -35,7 +35,7 @@ def main() -> None:
     )
 
     decoder = udf(
-        lambda payload: session_event_extract(payload, env("SCHEMA_REGISTRY_URL", "http://schema-registry:8081")),
+        lambda payload: session_event_extract(payload, env("SCHEMA_REGISTRY_URL", "http://schema-registry.data-platform-infra:8081")),
         result_type=DataTypes.STRING(),
     )
     table_env.create_temporary_system_function("decode_session_event", decoder)

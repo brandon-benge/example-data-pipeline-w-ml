@@ -6,15 +6,94 @@ import subprocess
 import sys
 from pathlib import Path
 
-from platform_stacks import STACKS
+from platform_stacks import (
+    STACKS,
+    SERVICE_RESOURCE_KIND,
+    WORKLOAD_NAMESPACES,
+    canonical_namespace_for_service,
+    namespace_candidates_for_service,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
+K8S_MANIFEST = ROOT / "k8s" / "platform.yaml"
+K8S_SECRETS_MANIFEST = ROOT / "k8s" / "platform-secrets.example.yaml"
+PVC_NAMESPACE_BY_NAME = {
+    "postgres-data": WORKLOAD_NAMESPACES["infra"],
+    "kafka-data": WORKLOAD_NAMESPACES["infra"],
+    "minio-data": WORKLOAD_NAMESPACES["infra"],
+    "superset-home": WORKLOAD_NAMESPACES["serve"],
+    "kafka-connect-plugin-cache": WORKLOAD_NAMESPACES["ingest"],
+}
+BOOTSTRAP_JOB_NAMESPACE_BY_NAME = {
+    "kafka-bootstrap": WORKLOAD_NAMESPACES["infra"],
+    "schema-registry-bootstrap": WORKLOAD_NAMESPACES["infra"],
+    "kafka-connect-source-bootstrap": WORKLOAD_NAMESPACES["ingest"],
+    "minio-bootstrap": WORKLOAD_NAMESPACES["infra"],
+    "iceberg-cdc-bootstrap": WORKLOAD_NAMESPACES["infra"],
+    "kafka-connect-sinks-bootstrap": WORKLOAD_NAMESPACES["ingest"],
+    "flink-bootstrap-bronze-events": WORKLOAD_NAMESPACES["process"],
+    "flink-bootstrap-online-features": WORKLOAD_NAMESPACES["process"],
+    "superset-bootstrap": WORKLOAD_NAMESPACES["serve"],
+}
 
 
-def run_compose(args: list[str]) -> int:
-    completed = subprocess.run(["docker", "compose", *args], cwd=ROOT)
+def run_kubectl(args: list[str]) -> int:
+    completed = subprocess.run(["kubectl", *args], cwd=ROOT)
     return completed.returncode
+
+
+def kubectl_output(args: list[str]) -> str:
+    completed = subprocess.run(
+        ["kubectl", *args],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
+def kubectl_success(args: list[str]) -> bool:
+    completed = subprocess.run(
+        ["kubectl", *args],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return completed.returncode == 0
+
+
+def terminating_workload_namespaces() -> list[str]:
+    terminating: list[str] = []
+    for namespace in WORKLOAD_NAMESPACES.values():
+        completed = subprocess.run(
+            [
+                "kubectl",
+                "get",
+                "namespace",
+                namespace,
+                "-o",
+                r'jsonpath={.status.phase}{"|"}{.metadata.deletionTimestamp}',
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            continue
+        phase, _, deletion_timestamp = completed.stdout.strip().partition("|")
+        if phase == "Terminating" or deletion_timestamp:
+            terminating.append(namespace)
+    return terminating
+
+
+def resolve_service_namespace(service: str) -> str:
+    kind = SERVICE_RESOURCE_KIND.get(service, "service")
+    for namespace in namespace_candidates_for_service(service):
+        if kubectl_success(["get", kind, service, "-n", namespace]):
+            return namespace
+    return canonical_namespace_for_service(service)
 
 
 def stack_services(stack: str) -> list[str]:
@@ -22,7 +101,7 @@ def stack_services(stack: str) -> list[str]:
 
 
 def is_bootstrap_service(service: str) -> bool:
-    return "-bootstrap" in service or service == "ml-training"
+    return "-bootstrap" in service
 
 
 def stack_bootstrap_services(stack: str) -> list[str]:
@@ -51,49 +130,166 @@ def cmd_list() -> int:
 
 
 def cmd_up(stack: str) -> int:
-    runtime_services = stack_runtime_services(stack)
-    bootstrap_services = stack_bootstrap_services(stack)
+    terminating = terminating_workload_namespaces()
+    if terminating:
+        print("Cannot apply the platform while workload namespaces are terminating:")
+        for namespace in terminating:
+            print(f"  - {namespace}")
+        print("Wait for namespace deletion to finish, then retry.")
+        return 1
 
-    up_code = 0
-    if runtime_services:
-        up_code = run_compose(["up", "-d", *runtime_services])
+    exit_code = 0
+    for namespace in WORKLOAD_NAMESPACES.values():
+        print(f"Ensuring namespace '{namespace}' exists.")
+        result = subprocess.run(
+            [
+                "/bin/zsh",
+                "-lc",
+                f"kubectl create namespace {namespace} --dry-run=client -o yaml | kubectl apply -f -",
+            ],
+            cwd=ROOT,
+        ).returncode
+        if result != 0:
+            exit_code = result
 
-    recreate_code = 0
-    if bootstrap_services:
-        recreate_code = run_compose(["up", "-d", "--force-recreate", *bootstrap_services])
+    print(f"Applying Kubernetes secrets manifest for logical stack '{stack}'.")
+    result = run_kubectl(["apply", "-f", str(K8S_SECRETS_MANIFEST)])
+    if result != 0:
+        exit_code = result
 
-    return up_code or recreate_code
+    # Jobs have immutable pod templates, so recreate bootstrap jobs before apply.
+    for job_name, namespace in BOOTSTRAP_JOB_NAMESPACE_BY_NAME.items():
+        print(f"Recreating bootstrap job template for job/{job_name} in namespace {namespace}.")
+        result = run_kubectl(
+            ["delete", "job", job_name, "-n", namespace, "--ignore-not-found=true"]
+        )
+        if result != 0:
+            exit_code = result
+
+    print(f"Applying Kubernetes platform manifest for logical stack '{stack}'.")
+    result = run_kubectl(["apply", "-f", str(K8S_MANIFEST)])
+    if result != 0:
+        exit_code = result
+    return exit_code
 
 
 def cmd_stop(stack: str) -> int:
-    runtime_services = stack_stoppable_runtime_services(stack)
-    bootstrap_services = stack_stoppable_bootstrap_services(stack)
+    services = stack_stoppable_runtime_services(stack) + stack_stoppable_bootstrap_services(stack)
+    if not services:
+        print(f"No removable services defined for stack '{stack}'.")
+        return 0
 
-    stop_code = 0
-    if runtime_services:
-        stop_code = run_compose(["stop", *runtime_services])
+    print(f"Stopping Kubernetes resources for logical stack '{stack}'.")
+    exit_code = 0
+    for service in services:
+        kind = SERVICE_RESOURCE_KIND.get(service)
+        if kind is None:
+            print(f"Skipping unknown service kind for '{service}'.")
+            continue
+        namespace = resolve_service_namespace(service)
+        result = run_kubectl(["delete", kind, service, "-n", namespace, "--ignore-not-found=true"])
+        if result != 0:
+            exit_code = result
+    return exit_code
 
-    rm_code = 0
-    if bootstrap_services:
-        rm_code = run_compose(["rm", "-f", *bootstrap_services])
 
-    return stop_code or rm_code
+def cmd_destroy_all() -> int:
+    print("Destroying the full Kubernetes platform, including PVCs.")
+    exit_code = 0
+
+    # Delete PVCs explicitly before namespace teardown so storage cleanup can start immediately.
+    for pvc_name, namespace in PVC_NAMESPACE_BY_NAME.items():
+        print(f"Deleting pvc/{pvc_name} in namespace {namespace}...")
+        result = run_kubectl(["delete", "pvc", pvc_name, "-n", namespace, "--ignore-not-found=true", "--wait=false"])
+        if result != 0:
+            exit_code = result
+
+    for manifest in (K8S_SECRETS_MANIFEST, K8S_MANIFEST):
+        print(f"Deleting resources from {manifest.name}...")
+        result = run_kubectl(["delete", "-f", str(manifest), "--ignore-not-found=true", "--wait=false"])
+        if result != 0:
+            exit_code = result
+
+    print("Deletion has been requested. Kubernetes may continue terminating namespaces and volumes in the background.")
+    return exit_code
 
 
 def cmd_ps(stack: str, *, include_all: bool) -> int:
-    args = ["ps"]
-    if include_all:
-        args.append("-a")
-    args.extend(stack_services(stack))
-    return run_compose(args)
+    exit_code = 0
+    found = False
+    for service in stack_services(stack):
+        kind = SERVICE_RESOURCE_KIND.get(service)
+        if kind is None:
+            continue
+        namespace = resolve_service_namespace(service)
+        print(f"===== {namespace} {kind}/{service} =====")
+        args = ["get", kind, service, "-n", namespace]
+        if include_all:
+            args.extend(["-o", "wide"])
+        result = run_kubectl(args)
+        if result == 0:
+            found = True
+        else:
+            exit_code = result
+        print()
+
+    if not found and exit_code == 0:
+        print(f"No resources defined for stack '{stack}'.")
+        return 1
+    return exit_code
 
 
 def cmd_logs(stack: str, *, follow: bool) -> int:
-    args = ["logs"]
+    targets: list[tuple[str, str, str]] = []
+    for service in stack_services(stack):
+        kind = SERVICE_RESOURCE_KIND.get(service)
+        namespace = resolve_service_namespace(service)
+        if kind in {"deployment", "statefulset"}:
+            try:
+                pod = kubectl_output(
+                    [
+                        "get",
+                        "pods",
+                        "-n",
+                        namespace,
+                        "-l",
+                        f"app.kubernetes.io/name={service}",
+                        "-o",
+                        "jsonpath={.items[0].metadata.name}",
+                    ]
+                )
+            except subprocess.CalledProcessError:
+                pod = ""
+            if pod:
+                targets.append((namespace, "pod", pod))
+        elif kind == "job":
+            targets.append((namespace, "job", service))
+        elif kind == "cronjob":
+            targets.append((namespace, "cronjob", service))
+
+    if not targets:
+        print(f"No loggable resources found for stack '{stack}'.")
+        return 1
+
     if follow:
-        args.append("-f")
-    args.extend(stack_services(stack))
-    return run_compose(args)
+        namespace, target_kind, target_name = targets[0]
+        if target_kind == "cronjob":
+            print(f"Cannot stream logs directly from cronjob/{target_name}; inspect a spawned job instead.")
+            return 1
+        return run_kubectl(["logs", "-n", namespace, "-f", f"{target_kind}/{target_name}"])
+
+    exit_code = 0
+    for namespace, target_kind, target_name in targets:
+        print(f"===== logs: {namespace} {target_kind}/{target_name} =====")
+        if target_kind == "cronjob":
+            print("CronJob does not hold logs directly; inspect a spawned job instead.\n")
+            exit_code = 1
+            continue
+        result = run_kubectl(["logs", "-n", namespace, f"{target_kind}/{target_name}"])
+        if result != 0:
+            exit_code = result
+        print()
+    return exit_code
 
 
 def parse_args() -> argparse.Namespace:
@@ -101,6 +297,7 @@ def parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("list", help="List the available logical stacks.")
+    subparsers.add_parser("destroy", help="Delete the full platform, including namespaces and PVCs.")
 
     for command in ("up", "stop", "ps"):
         subparser = subparsers.add_parser(command, help=f"{command} a logical stack")
@@ -122,6 +319,8 @@ def main() -> int:
         return cmd_up(args.stack)
     if args.command == "stop":
         return cmd_stop(args.stack)
+    if args.command == "destroy":
+        return cmd_destroy_all()
     if args.command == "ps":
         return cmd_ps(args.stack, include_all=args.all)
     if args.command == "logs":

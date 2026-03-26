@@ -1,5 +1,8 @@
 # Real-Time Scoring Use Case
 
+> Note
+> This document describes ML-platform behavior that is being moved out of this repo. Keep it only as migration context and use [ML Platform Split](./ml_platform_split.md) for the active repository boundary.
+
 ## Purpose
 
 This document explains the current runtime scoring pattern in the repo: one governed feature platform supporting multiple model artifacts, with customer scoring using Redis-backed request-time features plus offline context hydrated from Iceberg through Trino.
@@ -41,10 +44,10 @@ In this repo, that context is hydrated through Trino at sign-in or session start
 
 1. Spark produces governed Silver tables from Bronze.
 2. dbt builds offline ML feature tables in `iceberg.silver`.
-3. The compose-managed `ml-training` container runs `ml/train.py` for the configured feature groups.
+3. The Kubernetes-managed `ml-training` CronJob runs `ml/train.py` for the configured feature groups.
 4. Training publishes model artifacts to MinIO and records model-version metadata in `iceberg.silver.ml_model_registry`.
 5. Flink updates Redis with live customer event features.
-6. The compose-managed `ml-inference` service loads the latest artifact for the requested use case.
+6. The Kubernetes-managed `ml-inference` service loads the latest artifact for the requested use case.
 7. It fetches live Redis features for customer scoring and hydrates offline campaign or advertiser context through Trino where needed.
 8. It returns the score and can write it back to Redis.
 
@@ -79,8 +82,8 @@ Important boundary:
 ## Demo In This Repo
 
 ```bash
-docker compose exec dbt dbt build --select features
-docker compose up ml-training
+kubectl -n data-platform exec deploy/dbt -- dbt build --select features
+kubectl -n data-platform create job --from=cronjob/ml-training ml-training-manual-$(date +%s)
 curl http://localhost:8010/health
 curl -X POST http://localhost:8010/score/customer_purchase \
   -H 'Content-Type: application/json' \
@@ -95,8 +98,8 @@ curl -X POST http://localhost:8010/score/advertiser_budget_expansion \
 
 This demo:
 - materializes offline ML feature tables in Iceberg through dbt
-- trains model artifacts from those tables in a container and publishes them to MinIO
-- serves separate containerized inference endpoints for each use case
+- trains model artifacts from those tables in a Kubernetes job and publishes them to MinIO
+- serves separate inference endpoints for each use case
 - fetches live customer features from Redis where low-latency request-time features matter
 - hydrates offline context from Iceberg through Trino for campaign and advertiser scoring
 - returns three independent scores:

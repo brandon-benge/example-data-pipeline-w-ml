@@ -27,5 +27,5 @@ sys.exit(1)
 PY
 }
 
-wait_for_endpoint "http://iceberg-rest:8181"
+wait_for_endpoint "http://iceberg-rest.data-platform-infra:8181"
 exec /opt/spark/bin/spark-submit /app/spark/jobs/scheduler.py

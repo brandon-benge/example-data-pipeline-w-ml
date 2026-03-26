@@ -53,7 +53,7 @@ public class PrintDebeziumTransform {
     JsonConverter valueConverter = jsonConverter();
 
     Properties consumerProps = new Properties();
-    consumerProps.put("bootstrap.servers", "kafka:9092");
+    consumerProps.put("bootstrap.servers", "kafka.data-platform-infra:9092");
     consumerProps.put("group.id", "debug-print-debezium-transform-" + System.currentTimeMillis());
     consumerProps.put("auto.offset.reset", "earliest");
     consumerProps.put("enable.auto.commit", "false");

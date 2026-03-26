@@ -4,6 +4,6 @@ set -eu
 export PYTHONPATH=/app
 
 cd /app
-python3 /app/ml/train.py --feature-group customer_realtime
-python3 /app/ml/train.py --feature-group campaign
-python3 /app/ml/train.py --feature-group advertiser
+python3 /app/ml/train.py --feature-group customer_realtime --skip-empty
+python3 /app/ml/train.py --feature-group campaign --skip-empty
+python3 /app/ml/train.py --feature-group advertiser --skip-empty

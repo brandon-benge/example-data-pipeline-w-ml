@@ -47,7 +47,7 @@ def score_customer_purchase(request: CustomerScoreRequest) -> dict:
     try:
         return score_customer(
             customer_id=request.customer_id,
-            redis_host="redis",
+            redis_host="redis.data-platform-serve",
             redis_port=6379,
             write_redis=request.write_redis,
         )
@@ -60,7 +60,7 @@ def score_campaign_success(request: CampaignScoreRequest) -> dict:
     try:
         return score_campaign(
             campaign_id=request.campaign_id,
-            redis_host="redis",
+            redis_host="redis.data-platform-serve",
             redis_port=6379,
             write_redis=request.write_redis,
         )
@@ -73,7 +73,7 @@ def score_advertiser_budget_expansion(request: AdvertiserScoreRequest) -> dict:
     try:
         return score_advertiser(
             advertiser_id=request.advertiser_id,
-            redis_host="redis",
+            redis_host="redis.data-platform-serve",
             redis_port=6379,
             write_redis=request.write_redis,
         )

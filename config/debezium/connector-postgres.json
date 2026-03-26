@@ -2,10 +2,10 @@
   "name": "postgres-cdc-connector",
   "config": {
     "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
-    "database.hostname": "postgres",
+    "database.hostname": "postgres.data-platform-infra",
     "database.port": "5432",
     "database.user": "app_user",
-    "database.password": "app_password",
+    "database.password": "change-me",
     "database.dbname": "app_db",
     "topic.prefix": "cdc",
     "plugin.name": "pgoutput",

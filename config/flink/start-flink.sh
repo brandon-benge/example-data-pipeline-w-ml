@@ -6,7 +6,11 @@ STALE_MINUTES="${TEMP_DIR_TTL_MINUTES:-20}"
 cleanup_path() {
   path="$1"
   if [ -e "$path" ]; then
-    rm -rf "$path"
+    if [ -d "$path" ]; then
+      find "$path" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    else
+      rm -f "$path"
+    fi
   fi
 }
 
@@ -30,4 +34,17 @@ cleanup_startup_paths
 
 mkdir -p /tmp/flink-tmp
 
-exec /docker-entrypoint.sh "$@"
+role="${1:-}"
+
+case "$role" in
+  jobmanager)
+    exec /opt/flink/bin/jobmanager.sh start-foreground
+    ;;
+  taskmanager)
+    exec /opt/flink/bin/taskmanager.sh start-foreground
+    ;;
+  *)
+    echo "Usage: $0 <jobmanager|taskmanager>" >&2
+    exit 1
+    ;;
+esac

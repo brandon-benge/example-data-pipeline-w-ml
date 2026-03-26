@@ -98,7 +98,7 @@ def main() -> None:
     )
 
     decoder = udf(
-        lambda payload: session_event_extract(payload, env("SCHEMA_REGISTRY_URL", "http://schema-registry:8081")),
+        lambda payload: session_event_extract(payload, env("SCHEMA_REGISTRY_URL", "http://schema-registry.data-platform-infra:8081")),
         result_type=DataTypes.STRING(),
     )
     table_env.create_temporary_system_function("decode_session_event", decoder)
@@ -132,7 +132,7 @@ def main() -> None:
     sink_stream = keyed_stream.process(
         CustomerFeatureAggregator(
             feature_definition=feature_definition,
-            redis_host=env("REDIS_HOST", "redis"),
+            redis_host=env("REDIS_HOST", "redis.data-platform-serve"),
             redis_port=int(env("REDIS_PORT", "6379")),
         ),
         output_type=Types.MAP(Types.STRING(), Types.STRING()),

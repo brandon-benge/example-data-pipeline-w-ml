@@ -1,0 +1,699 @@
+openapi: 3.1.0
+info:
+  title: Retail Advertising Commerce Platform Contracts
+  version: 1.0.0
+  summary: Machine-readable contracts for external APIs, stream payloads, dataset records, and online feature records.
+  description: >
+    This file captures the machine-readable interface layer for the laptop-scale
+    data and ML platform. It covers HTTP inference endpoints, Kafka topic
+    contracts, direct-event schema details, representative dataset record
+    contracts, and Redis online feature record shape.
+servers:
+  - url: http://localhost:8000
+    description: Example local inference endpoint
+tags:
+  - name: system
+    description: Basic service probes
+  - name: inference
+    description: Request-time scoring endpoints
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Service health
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    const: ok
+                required: [status]
+  /v1/inference/customer_purchase:
+    post:
+      tags: [inference]
+      summary: Score customer purchase propensity
+      operationId: scoreCustomerPurchase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                customer_id:
+                  type: integer
+                  format: int64
+                model_family:
+                  type: string
+                  default: customer_realtime
+              required: [customer_id]
+      responses:
+        "200":
+          description: Successful score
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerPurchaseScore"
+  /v1/inference/campaign_success:
+    post:
+      tags: [inference]
+      summary: Score campaign success propensity
+      operationId: scoreCampaignSuccess
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                campaign_id:
+                  type: integer
+                  format: int64
+                model_family:
+                  type: string
+                  default: campaign
+              required: [campaign_id]
+      responses:
+        "200":
+          description: Successful score
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignSuccessScore"
+  /v1/inference/advertiser_budget_expansion:
+    post:
+      tags: [inference]
+      summary: Score advertiser budget expansion propensity
+      operationId: scoreAdvertiserBudgetExpansion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                advertiser_id:
+                  type: integer
+                  format: int64
+                model_family:
+                  type: string
+                  default: advertiser
+              required: [advertiser_id]
+      responses:
+        "200":
+          description: Successful score
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdvertiserBudgetExpansionScore"
+components:
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required: [code, message]
+    CustomerPurchaseScore:
+      type: object
+      additionalProperties: false
+      properties:
+        customer_id:
+          type: integer
+          format: int64
+        score_name:
+          type: string
+          const: customer_purchase_propensity
+        score:
+          type: number
+        model_family:
+          type: string
+        model_version:
+          type: string
+        feature_version:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - customer_id
+        - score_name
+        - score
+        - model_family
+        - model_version
+        - feature_version
+        - updated_at
+    CampaignSuccessScore:
+      type: object
+      additionalProperties: false
+      properties:
+        campaign_id:
+          type: integer
+          format: int64
+        score_name:
+          type: string
+          const: campaign_success_propensity
+        score:
+          type: number
+        model_family:
+          type: string
+        model_version:
+          type: string
+        feature_version:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - campaign_id
+        - score_name
+        - score
+        - model_family
+        - model_version
+        - feature_version
+        - updated_at
+    AdvertiserBudgetExpansionScore:
+      type: object
+      additionalProperties: false
+      properties:
+        advertiser_id:
+          type: integer
+          format: int64
+        score_name:
+          type: string
+          const: advertiser_budget_expansion_propensity
+        score:
+          type: number
+        model_family:
+          type: string
+        model_version:
+          type: string
+        feature_version:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - advertiser_id
+        - score_name
+        - score
+        - model_family
+        - model_version
+        - feature_version
+        - updated_at
+    SessionEvent:
+      type: object
+      additionalProperties: false
+      properties:
+        event_uuid:
+          type: string
+        event_id:
+          type: integer
+          format: int64
+        session_id:
+          type: integer
+          format: int64
+        customer_id:
+          type: integer
+          format: int64
+        event_ts:
+          type: string
+          format: date-time
+        event_type:
+          type: string
+          enum:
+            - product_view
+            - ad_impression
+            - ad_click
+            - add_to_cart
+            - checkout_start
+        product_id:
+          type:
+            - integer
+            - "null"
+          format: int64
+        campaign_id:
+          type:
+            - integer
+            - "null"
+          format: int64
+        page_type:
+          type:
+            - string
+            - "null"
+        search_term:
+          type:
+            - string
+            - "null"
+        position_in_list:
+          type:
+            - integer
+            - "null"
+        ingest_ts:
+          type: string
+          format: date-time
+        producer_version:
+          type: string
+        schema_version:
+          type: integer
+      required:
+        - event_uuid
+        - event_id
+        - session_id
+        - customer_id
+        - event_ts
+        - event_type
+        - ingest_ts
+        - producer_version
+        - schema_version
+    BronzeCustomerCdcRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        record_key:
+          type: string
+        source_table:
+          type: string
+        op:
+          type: string
+        source_ts_ms:
+          type: integer
+          format: int64
+        source_ts:
+          type: string
+          format: date-time
+        ingest_ts:
+          type: string
+          format: date-time
+        event_uuid:
+          type: string
+        schema_version:
+          type: integer
+        source_partition:
+          type: integer
+        source_offset:
+          type: integer
+          format: int64
+        transaction_id:
+          type:
+            - string
+            - "null"
+        is_tombstone:
+          type: boolean
+        payload_customer_id:
+          type: integer
+          format: int64
+        payload_first_name:
+          type: string
+        payload_last_name:
+          type: string
+        payload_email:
+          type: string
+        payload_phone:
+          type: string
+        payload_city:
+          type: string
+        payload_state:
+          type: string
+        payload_zip_code:
+          type: string
+        payload_status:
+          type: string
+        payload_created_at:
+          type: string
+          format: date-time
+        payload_updated_at:
+          type: string
+          format: date-time
+      required:
+        - record_key
+        - source_table
+        - op
+        - source_ts_ms
+        - source_ts
+        - ingest_ts
+        - schema_version
+        - source_partition
+        - source_offset
+        - is_tombstone
+        - payload_customer_id
+        - payload_first_name
+        - payload_last_name
+        - payload_email
+        - payload_city
+        - payload_state
+        - payload_zip_code
+        - payload_status
+        - payload_created_at
+        - payload_updated_at
+    SilverCustomerCurrent:
+      type: object
+      additionalProperties: false
+      properties:
+        customer_id:
+          type: integer
+          format: int64
+        first_name_masked:
+          type: string
+        last_name_masked:
+          type: string
+        email_masked:
+          type: string
+        phone_masked:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zip_code_masked:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        source_last_change_ts:
+          type: string
+          format: date-time
+        silver_processed_ts:
+          type: string
+          format: date-time
+        data_owner:
+          type: string
+        sensitivity_class:
+          type: string
+      required:
+        - customer_id
+        - first_name_masked
+        - last_name_masked
+        - email_masked
+        - phone_masked
+        - city
+        - state
+        - zip_code_masked
+        - status
+        - created_at
+        - updated_at
+        - source_last_change_ts
+        - silver_processed_ts
+        - data_owner
+        - sensitivity_class
+    SilverSessionEventClean:
+      type: object
+      additionalProperties: false
+      properties:
+        event_uuid:
+          type: string
+        session_id:
+          type: integer
+          format: int64
+        customer_id:
+          type: integer
+          format: int64
+        event_ts:
+          type: string
+          format: date-time
+        event_date:
+          type: string
+          format: date
+        event_type:
+          type: string
+        product_id:
+          type:
+            - integer
+            - "null"
+          format: int64
+        campaign_id:
+          type:
+            - integer
+            - "null"
+          format: int64
+        page_type:
+          type:
+            - string
+            - "null"
+        search_term:
+          type:
+            - string
+            - "null"
+        position_in_list:
+          type:
+            - integer
+            - "null"
+        ingest_ts:
+          type: string
+          format: date-time
+        producer_version:
+          type: string
+        schema_version:
+          type: integer
+        silver_processed_ts:
+          type: string
+          format: date-time
+      required:
+        - event_uuid
+        - session_id
+        - customer_id
+        - event_ts
+        - event_date
+        - event_type
+        - ingest_ts
+        - producer_version
+        - schema_version
+        - silver_processed_ts
+    MartCampaignPerformance:
+      type: object
+      additionalProperties: false
+      properties:
+        metric_date:
+          type: string
+          format: date
+        campaign_id:
+          type: integer
+          format: int64
+        advertiser_id:
+          type: integer
+          format: int64
+        impressions:
+          type: integer
+          format: int64
+        clicks:
+          type: integer
+          format: int64
+        ctr:
+          type: number
+        attributed_orders:
+          type: integer
+          format: int64
+        attributed_revenue:
+          type: number
+        sales_contacts:
+          type: integer
+          format: int64
+        budget_amount:
+          type: number
+        campaign_status:
+          type: string
+      required:
+        - metric_date
+        - campaign_id
+        - advertiser_id
+        - impressions
+        - clicks
+        - ctr
+        - attributed_orders
+        - attributed_revenue
+        - sales_contacts
+        - budget_amount
+        - campaign_status
+    RedisCustomerRealtimeFeatureRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        customer_id:
+          type: integer
+          format: int64
+        views_1h:
+          type: integer
+          format: int64
+        views_24h:
+          type: integer
+          format: int64
+        ad_clicks_24h:
+          type: integer
+          format: int64
+        add_to_cart_24h:
+          type: integer
+          format: int64
+        feature_version:
+          type: string
+        last_event_ts:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        ttl_seconds:
+          type: integer
+      required:
+        - customer_id
+        - views_1h
+        - views_24h
+        - ad_clicks_24h
+        - add_to_cart_24h
+        - feature_version
+        - last_event_ts
+        - updated_at
+        - ttl_seconds
+x-event-contracts:
+  kafka:
+    broker_mode: single-broker-kraft
+    topics:
+      - name: cdc.sales_rep
+        partitions: 1
+        replication_factor: 1
+        cleanup_policy: delete
+        retention: 7d
+        key_strategy: sales_rep_id
+      - name: cdc.customer
+        partitions: 2
+        replication_factor: 1
+        cleanup_policy: delete
+        retention: 7d
+        key_strategy: customer_id
+      - name: cdc.advertiser
+        partitions: 1
+        replication_factor: 1
+        cleanup_policy: delete
+        retention: 7d
+        key_strategy: advertiser_id
+      - name: cdc.product
+        partitions: 2
+        replication_factor: 1
+        cleanup_policy: delete
+        retention: 7d
+        key_strategy: product_id
+      - name: cdc.campaign
+        partitions: 2
+        replication_factor: 1
+        cleanup_policy: delete
+        retention: 7d
+        key_strategy: campaign_id
+      - name: cdc.campaign_product
+        partitions: 1
+        replication_factor: 1
+        cleanup_policy: delete
+        retention: 7d
+        key_strategy: campaign_product_id
+      - name: cdc.customer_session
+        partitions: 2
+        replication_factor: 1
+        cleanup_policy: delete
+        retention: 3d
+        key_strategy: session_id
+      - name: cdc.order_header
+        partitions: 2
+        replication_factor: 1
+        cleanup_policy: delete
+        retention: 7d
+        key_strategy: order_id
+      - name: cdc.order_item
+        partitions: 2
+        replication_factor: 1
+        cleanup_policy: delete
+        retention: 7d
+        key_strategy: order_item_id
+      - name: cdc.sales_activity
+        partitions: 1
+        replication_factor: 1
+        cleanup_policy: delete
+        retention: 7d
+        key_strategy: sales_activity_id
+      - name: events.session_event
+        partitions: 4
+        replication_factor: 1
+        cleanup_policy: delete
+        retention: 3d
+        key_strategy: event_uuid or session_id
+        schema_registry_subjects:
+          - events.session_event-key
+          - events.session_event-value
+        compatibility: BACKWARD
+        subject_strategy: topic-based subjects for key and value
+        producer_must_register_or_validate_subject: true
+        consumer_must_reject_schema_mismatch: true
+        value_contract_registry_managed: true
+      - name: dlq.events.session_event_schema
+        partitions: 2
+        replication_factor: 1
+        cleanup_policy: delete
+        retention: 7d
+        key_strategy: topic-partition-offset or event_uuid
+    producer_defaults:
+      acks: all
+      enable_idempotence: true
+      linger_ms: 10
+      compression_type: lz4
+    topic_defaults:
+      segment_bytes: 134217728
+      min_insync_replicas: 1
+      compression_type: lz4
+    direct_event_dlq_behavior:
+      invalid_events_must_not_land_in_bronze: true
+      preserve_raw_payload: true
+      preserve_kafka_metadata: true
+      preserve_schema_subject_version_when_present: true
+      preserve_failure_reason: true
+    cdc_source_connector:
+      topic_prefix: cdc
+      cdc_topics_use_debezium_native_envelope: true
+x-online-store-contracts:
+  redis:
+    record_model: one record per entity key
+    supported_record_types:
+      - hash
+      - json_document
+x-feature-contracts:
+  offline_feature_sets:
+    - name: customer_purchase_features_v1
+      entity: customer
+      entity_key: customer_id
+      source_table: iceberg.silver.silver_customer_daily_metrics
+      label_name: customer_purchase_next_7d
+      label_source_table: iceberg.silver.silver_order_header
+    - name: customer_purchase_realtime_features_v1
+      entity: customer
+      entity_key: customer_id
+    - name: campaign_success_features_v1
+      entity: campaign
+      entity_key: campaign_id
+    - name: advertiser_budget_features_v1
+      entity: advertiser
+      entity_key: advertiser_id
+  online_feature_sets:
+    - name: customer_realtime_features_v1
+      entity: customer
+      entity_key: customer_id
+      redis_key_pattern: "features:customer:{customer_id}:v1"
+      ttl_seconds: 86400
+      online_only_subset:
+        - views_1h
+        - views_24h
+        - ad_clicks_24h
+        - add_to_cart_24h

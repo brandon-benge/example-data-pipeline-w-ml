@@ -4,6 +4,8 @@ set -eu
 CONNECT_BASE_URL="${CONNECT_BASE_URL:-http://kafka-connect:8083}"
 CONNECT_ROLE="${CONNECT_ROLE:-all}"
 CONNECT_SINK_ALLOWLIST="${CONNECT_SINK_ALLOWLIST:-}"
+CONNECT_READY_ATTEMPTS="${CONNECT_READY_ATTEMPTS:-60}"
+CONNECT_READY_INTERVAL_SECONDS="${CONNECT_READY_INTERVAL_SECONDS:-5}"
 
 SINK_SPECS=$(cat <<'EOF'
 sales_rep|postgres-cdc-sales-rep-iceberg-sink|cdc.sales_rep|bronze.bronze_sales_rep_cdc|connect-iceberg-control-sales-rep-v1
@@ -42,6 +44,65 @@ register_connector() {
       --data @"$create_payload" \
       "$CONNECT_BASE_URL/connectors" >/dev/null
   fi
+}
+
+wait_for_connect() {
+  attempt=1
+  while [ "$attempt" -le "$CONNECT_READY_ATTEMPTS" ]; do
+    if curl -fsS "$CONNECT_BASE_URL/connectors" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$CONNECT_READY_INTERVAL_SECONDS"
+    attempt=$((attempt + 1))
+  done
+
+  echo "Kafka Connect REST API did not become ready at $CONNECT_BASE_URL" >&2
+  return 1
+}
+
+register_postgres_source_connector() {
+  payload_file="$(mktemp)"
+  config_file="$(mktemp)"
+  dollar='$'
+
+  cat >"$config_file" <<EOF
+{
+  "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+  "database.hostname": "${POSTGRES_CONNECT_HOST:-postgres.data-platform-infra}",
+  "database.port": "${POSTGRES_CONNECT_PORT:-5432}",
+  "database.user": "${POSTGRES_USER:-app_user}",
+  "database.password": "${POSTGRES_PASSWORD:-change-me}",
+  "database.dbname": "${POSTGRES_DB:-app_db}",
+  "topic.prefix": "cdc",
+  "plugin.name": "pgoutput",
+  "slot.name": "debezium_slot",
+  "publication.name": "debezium_publication",
+  "publication.autocreate.mode": "filtered",
+  "table.include.list": "public.sales_rep,public.customer,public.advertiser,public.product,public.campaign,public.campaign_product,public.customer_session,public.order_header,public.order_item,public.sales_activity",
+  "transforms": "route",
+  "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+  "transforms.route.regex": "cdc\\\\.public\\\\.(.*)",
+  "transforms.route.replacement": "cdc.${dollar}1",
+  "tombstones.on.delete": "true",
+  "provide.transaction.metadata": "true",
+  "decimal.handling.mode": "precise",
+  "time.precision.mode": "connect",
+  "snapshot.fetch.size": "2000",
+  "max.batch.size": "2048",
+  "max.queue.size": "8192",
+  "poll.interval.ms": "1000"
+}
+EOF
+
+  cat >"$payload_file" <<EOF
+{
+  "name": "postgres-cdc-connector",
+  "config": $(cat "$config_file")
+}
+EOF
+
+  register_connector "postgres-cdc-connector" "$payload_file" "$config_file"
+  rm -f "$payload_file" "$config_file"
 }
 
 delete_connector() {
@@ -89,10 +150,10 @@ EOF
   "errors.deadletterqueue.topic.replication.factor": "1",
   "errors.deadletterqueue.context.headers.enable": "true",
   "iceberg.catalog.type": "rest",
-  "iceberg.catalog.uri": "http://iceberg-rest:8181",
+  "iceberg.catalog.uri": "http://iceberg-rest.data-platform-infra:8181",
   "iceberg.catalog.warehouse": "s3://warehouse/",
   "iceberg.catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
-  "iceberg.catalog.s3.endpoint": "http://minio:9000",
+  "iceberg.catalog.s3.endpoint": "http://minio.data-platform-infra:9000",
   "iceberg.catalog.s3.path-style-access": "true",
   "iceberg.catalog.s3.access-key-id": "minio",
   "iceberg.catalog.s3.secret-access-key": "minio123",
@@ -143,12 +204,12 @@ slug_allowed() {
 }
 
 if [ "$CONNECT_ROLE" = "all" ] || [ "$CONNECT_ROLE" = "source" ]; then
-  register_connector "postgres-cdc-connector" \
-    /config/debezium/connector-postgres.json \
-    /config/debezium/connector-postgres.config.json
+  wait_for_connect
+  register_postgres_source_connector
 fi
 
 if [ "$CONNECT_ROLE" = "all" ] || [ "$CONNECT_ROLE" = "sinks" ]; then
+  wait_for_connect
   printf '%s\n' "$SINK_SPECS" | while IFS='|' read -r slug connector_name source_topic target_table control_topic; do
     if slug_allowed "$slug"; then
       register_cdc_sink_connector "$connector_name" "$source_topic" "$target_table" "$control_topic"

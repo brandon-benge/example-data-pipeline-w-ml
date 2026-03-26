@@ -10,6 +10,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from generator.config import GeneratorSettings, load_settings
+from generator.host_access import ensure_generator_access
 from generator.scenarios.advertisers import generate_advertisers
 from generator.scenarios.campaigns import generate_campaign_products, generate_campaigns
 from generator.scenarios.customers import generate_customers, generate_sales_reps
@@ -27,6 +28,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--customers", type=int, help="Override customer count.")
     parser.add_argument("--events-per-minute", type=int, help="Override session_event count.")
     parser.add_argument("--orders-per-hour", type=int, help="Override order count.")
+    parser.add_argument(
+        "--allow-small-source-tables",
+        action="store_true",
+        help="Allow source-table counts below the default 50,000-row minimum.",
+    )
     return parser
 
 
@@ -96,15 +102,33 @@ def main() -> None:
             "customers": args.customers,
             "events_per_minute": args.events_per_minute,
             "orders_per_hour": args.orders_per_hour,
+            "enforce_minimums": not args.allow_small_source_tables,
         }.items()
         if value is not None
     }
     settings = load_settings(args.config, overrides=overrides)
+    print(
+        "Starting synthetic generation:",
+        f"enforce_minimums={settings.enforce_minimums}",
+        f"customers={settings.customers}",
+        f"orders={settings.orders_per_hour}",
+        f"session_events={settings.events_per_minute}",
+        f"seed={settings.seed}",
+        flush=True,
+    )
+    print("Building synthetic source bundle...", flush=True)
     bundle, events = build_source_bundle(settings)
+    print("Synthetic source bundle ready.", flush=True)
+    ensure_generator_access(settings, args.mode)
 
     if args.mode in {"postgres", "both"}:
         from generator.postgres_writer import PostgresWriter
 
+        print(
+            "Writing source tables to Postgres:",
+            f"{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}",
+            flush=True,
+        )
         writer = PostgresWriter(settings.postgres_dsn)
         counts = writer.write_bundle(bundle)
         print("Postgres rows written:")
@@ -114,6 +138,12 @@ def main() -> None:
     if args.mode in {"kafka", "both"}:
         from generator.kafka_event_producer import SessionEventProducer
 
+        print(
+            "Publishing session events to Kafka:",
+            f"bootstrap={settings.kafka_bootstrap_servers}",
+            f"schema_registry={settings.schema_registry_url}",
+            flush=True,
+        )
         producer = SessionEventProducer(
             bootstrap_servers=settings.kafka_bootstrap_servers,
             schema_registry_url=settings.schema_registry_url,
@@ -125,6 +155,7 @@ def main() -> None:
 
     print(
         "Generation complete:",
+        f"enforce_minimums={settings.enforce_minimums}",
         f"customers={settings.customers}",
         f"orders={settings.orders_per_hour}",
         f"session_events={len(events)}",

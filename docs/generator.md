@@ -60,7 +60,7 @@ Other counts are derived in [`generator/config.py`](../generator/config.py):
 - `sessions` is `max(customers // 2, events_per_minute * 3)`
 - `sales_activities` depends on advertisers and orders
 
-The generator now enforces a minimum of `50,000` rows for every Postgres source-table base count:
+By default, the generator enforces a minimum of `50,000` rows for every Postgres source-table base count:
 
 - `customer`
 - `sales_rep`
@@ -76,7 +76,15 @@ And the derived bridge/fact child tables naturally stay above that floor too:
 - `campaign_product` is generated from all campaigns and will exceed `50,000`
 - `order_item` is generated from all orders and will exceed `50,000`
 
-That means increasing event volume can also change the number of generated sessions, even if customer count stays the same, but no generated Postgres source table will fall below `50,000` rows.
+That means increasing event volume can also change the number of generated sessions, even if customer count stays the same, but by default no generated Postgres source table will fall below `50,000` rows.
+
+If you need a smaller local run, you can bypass that floor with:
+
+```bash
+python3 generator/app.py --config params.yaml --mode both --allow-small-source-tables --customers 10000 --events-per-minute 10000 --orders-per-hour 5000
+```
+
+That flag disables the `50,000` minimum for both directly configured source-table counts and derived source-table counts such as sessions, advertisers, and products.
 
 The generator also now produces more curated relationships across those entities:
 
@@ -97,7 +105,7 @@ For Postgres, rerunning with the same customer count does not create `customer_i
 
 One important caveat now:
 
-- if you pass a lower number such as `--customers 10000` or `--orders-per-hour 1000`, the generator will still raise that to the `50,000` minimum for source-table generation
+- if you pass a lower number such as `--customers 10000` or `--orders-per-hour 1000`, the generator will still raise that to the `50,000` minimum for source-table generation unless you also pass `--allow-small-source-tables`
 
 The relational source tables use fixed primary-key ranges like:
 
@@ -202,7 +210,7 @@ That last command still rewrites the same primary-key ranges for orders and rela
 
 ## Minimum row guarantee
 
-For local debugging, the generator now guarantees at least `50,000` rows in every generated Postgres source table, even if the YAML config or CLI overrides request smaller counts.
+For local debugging, the generator now guarantees at least `50,000` rows in every generated Postgres source table by default, even if the YAML config or CLI overrides request smaller counts.
 
 This was added specifically because tiny CDC topics were repeatedly stalling in the Iceberg Kafka Connect sink path in local runs.
 
@@ -216,7 +224,7 @@ Observed failure pattern before the change:
 
 After raising every generated Postgres source table to at least `50,000` rows, the previously failing CDC sink connectors eventually committed successfully.
 
-So in this repo, the `50,000` minimum is a documented local stability workaround for low-volume CDC topics, not an arbitrary default.
+So in this repo, the `50,000` minimum is a documented local stability workaround for low-volume CDC topics, not an arbitrary default. `--allow-small-source-tables` exists as an explicit escape hatch for smaller local runs and can reintroduce those low-volume connector issues.
 
 ## Practical answer
 

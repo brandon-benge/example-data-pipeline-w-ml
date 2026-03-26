@@ -1,0 +1,3087 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-platform-infra
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-platform-ingest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-platform-process
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-platform-serve
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-platform-govern
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform-flink-high
+value: 100000
+preemptionPolicy: PreemptLowerPriority
+globalDefault: false
+description: Prioritize Flink scheduling ahead of lower-priority batch and analytics workloads.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform-batch-low
+value: -10
+globalDefault: false
+description: Lower-priority batch and analytics workloads that may yield resources to Flink.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-bootstrap-tools
+  namespace: data-platform-infra
+data:
+  bootstrap-topics.sh: |
+    #!/bin/sh
+    set -eu
+
+    BOOTSTRAP_SERVER="${KAFKA_BOOTSTRAP_SERVERS:-kafka.data-platform-infra:9092}"
+    MAX_PARALLEL_CREATES="${MAX_PARALLEL_CREATES:-4}"
+
+    echo "Waiting for Kafka admin endpoint on ${BOOTSTRAP_SERVER}..."
+    attempt=0
+    until /opt/kafka/bin/kafka-topics.sh --bootstrap-server "${BOOTSTRAP_SERVER}" --list >/dev/null 2>&1; do
+      attempt=$((attempt + 1))
+      if [ "$attempt" -ge 60 ]; then
+        echo "Kafka admin endpoint did not become ready after ${attempt} attempts." >&2
+        exit 1
+      fi
+      sleep 2
+    done
+
+    EXISTING_TOPICS="$(/opt/kafka/bin/kafka-topics.sh --bootstrap-server "${BOOTSTRAP_SERVER}" --list || true)"
+
+    echo "Kafka admin endpoint is ready. Creating topics..."
+
+    topic_exists() {
+      topic_name="$1"
+      printf '%s\n' "$EXISTING_TOPICS" | grep -Fxq "$topic_name"
+    }
+
+    topic_retention_override() {
+      topic_name="$1"
+      case "$topic_name" in
+        cdc.*|events.*|dlq.events.*)
+          printf '%s\n' 10800000
+          ;;
+        *)
+          printf '%s\n' ""
+          ;;
+      esac
+    }
+
+    enforce_topic_retention() {
+      topic_name="$1"
+      retention_override="$(topic_retention_override "$topic_name")"
+      if [ -z "$retention_override" ]; then
+        return 0
+      fi
+      echo "[kafka-bootstrap] setting retention.ms=${retention_override} on ${topic_name}"
+      /opt/kafka/bin/kafka-configs.sh \
+        --bootstrap-server "${BOOTSTRAP_SERVER}" \
+        --entity-type topics \
+        --entity-name "$topic_name" \
+        --alter \
+        --add-config retention.ms="${retention_override}"
+    }
+
+    create_topic_from_file() {
+      topic_file="$1"
+      unset TOPIC_NAME PARTITIONS REPLICATION_FACTOR CLEANUP_POLICY RETENTION_MS SEGMENT_BYTES MIN_INSYNC_REPLICAS COMPRESSION_TYPE
+      . "$topic_file"
+      retention_override="$(topic_retention_override "$TOPIC_NAME")"
+      if [ -n "$retention_override" ]; then
+        RETENTION_MS="$retention_override"
+      fi
+      if topic_exists "$TOPIC_NAME"; then
+        echo "[kafka-bootstrap] reconciling existing topic ${TOPIC_NAME}"
+        enforce_topic_retention "$TOPIC_NAME"
+        return 0
+      fi
+      echo "[kafka-bootstrap] creating topic ${TOPIC_NAME}"
+
+      /opt/kafka/bin/kafka-topics.sh \
+        --create \
+        --if-not-exists \
+        --bootstrap-server "${BOOTSTRAP_SERVER}" \
+        --topic "$TOPIC_NAME" \
+        --partitions "$PARTITIONS" \
+        --replication-factor "$REPLICATION_FACTOR" \
+        --config cleanup.policy="$CLEANUP_POLICY" \
+        --config retention.ms="$RETENTION_MS" \
+        --config segment.bytes="$SEGMENT_BYTES" \
+        --config min.insync.replicas="$MIN_INSYNC_REPLICAS" \
+        --config compression.type="$COMPRESSION_TYPE"
+      enforce_topic_retention "$TOPIC_NAME"
+    }
+
+    create_internal_topic() {
+      internal_topic="$1"
+      if topic_exists "$internal_topic"; then
+        echo "[kafka-bootstrap] skipping existing internal topic ${internal_topic}"
+        return 0
+      fi
+      echo "[kafka-bootstrap] creating internal topic ${internal_topic}"
+      /opt/kafka/bin/kafka-topics.sh \
+        --create \
+        --if-not-exists \
+        --bootstrap-server "${BOOTSTRAP_SERVER}" \
+        --topic "$internal_topic" \
+        --partitions 1 \
+        --replication-factor 1 \
+        --config cleanup.policy=compact \
+        --config min.insync.replicas=1
+    }
+
+    wait_for_batch() {
+      batch_pids="$1"
+      for pid in $batch_pids; do
+        wait "$pid"
+      done
+    }
+
+    run_topic_batch() {
+      mode="$1"
+      label="$2"
+      total_items="$3"
+      shift 3
+      batch_pids=""
+      batch_count=0
+      batch_number=1
+      processed=0
+
+      echo "[kafka-bootstrap] starting ${label}: total=${total_items} parallel=${MAX_PARALLEL_CREATES}"
+      for item in "$@"; do
+        if [ "$mode" = "file" ]; then
+          create_topic_from_file "$item" &
+        else
+          create_internal_topic "$item" &
+        fi
+        pid=$!
+        batch_pids="${batch_pids} ${pid}"
+        batch_count=$((batch_count + 1))
+
+        if [ "$batch_count" -ge "$MAX_PARALLEL_CREATES" ]; then
+          echo "[kafka-bootstrap] waiting for ${label} batch ${batch_number}"
+          wait_for_batch "$batch_pids"
+          processed=$((processed + batch_count))
+          echo "[kafka-bootstrap] completed ${label} batch ${batch_number} (${processed}/${total_items})"
+          batch_pids=""
+          batch_count=0
+          batch_number=$((batch_number + 1))
+        fi
+      done
+
+      if [ "$batch_count" -gt 0 ]; then
+        echo "[kafka-bootstrap] waiting for ${label} batch ${batch_number}"
+        wait_for_batch "$batch_pids"
+        processed=$((processed + batch_count))
+        echo "[kafka-bootstrap] completed ${label} batch ${batch_number} (${processed}/${total_items})"
+      fi
+    }
+
+    topic_files=""
+    topic_file_count=0
+    for topic_file in /config/kafka/topics/*.env; do
+      topic_files="${topic_files} ${topic_file}"
+      topic_file_count=$((topic_file_count + 1))
+    done
+    run_topic_batch file "topic definitions" "$topic_file_count" $topic_files
+
+    internal_topics=""
+    internal_topic_count=0
+    for internal_topic in \
+      _schemas \
+      debezium_source_connect_configs \
+      debezium_source_connect_offsets \
+      debezium_source_connect_statuses \
+      debezium_sink_connect_configs \
+      debezium_sink_connect_offsets \
+      debezium_sink_connect_statuses; do
+      internal_topics="${internal_topics} ${internal_topic}"
+      internal_topic_count=$((internal_topic_count + 1))
+    done
+    run_topic_batch internal "internal topics" "$internal_topic_count" $internal_topics
+
+    echo "Kafka topics initialized."
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: debezium-bootstrap-config
+  namespace: data-platform-ingest
+data:
+  register-connector.sh: |
+    #!/bin/sh
+    set -eu
+
+    CONNECT_BASE_URL="${CONNECT_BASE_URL:-http://kafka-connect:8083}"
+    CONNECT_ROLE="${CONNECT_ROLE:-all}"
+    CONNECT_SINK_ALLOWLIST="${CONNECT_SINK_ALLOWLIST:-}"
+    CONNECT_READY_ATTEMPTS="${CONNECT_READY_ATTEMPTS:-60}"
+    CONNECT_READY_INTERVAL_SECONDS="${CONNECT_READY_INTERVAL_SECONDS:-5}"
+
+    SINK_SPECS=$(cat <<'EOF'
+    sales_rep|postgres-cdc-sales-rep-iceberg-sink|cdc.sales_rep|bronze.bronze_sales_rep_cdc|connect-iceberg-control-sales-rep-v1
+    customer|postgres-cdc-customer-iceberg-sink|cdc.customer|bronze.bronze_customer_cdc|connect-iceberg-control-customer-v1
+    advertiser|postgres-cdc-advertiser-iceberg-sink|cdc.advertiser|bronze.bronze_advertiser_cdc|connect-iceberg-control-advertiser-v1
+    product|postgres-cdc-product-iceberg-sink|cdc.product|bronze.bronze_product_cdc|connect-iceberg-control-product-v1
+    campaign|postgres-cdc-campaign-iceberg-sink|cdc.campaign|bronze.bronze_campaign_cdc|connect-iceberg-control-campaign-v1
+    campaign_product|postgres-cdc-campaign-product-iceberg-sink|cdc.campaign_product|bronze.bronze_campaign_product_cdc|connect-iceberg-control-campaign-product-v1
+    customer_session|postgres-cdc-customer-session-iceberg-sink|cdc.customer_session|bronze.bronze_customer_session_cdc|connect-iceberg-control-customer-session-v2
+    order_header|postgres-cdc-order-header-iceberg-sink|cdc.order_header|bronze.bronze_order_header_cdc|connect-iceberg-control-order-header-v1
+    order_item|postgres-cdc-order-item-iceberg-sink|cdc.order_item|bronze.bronze_order_item_cdc|connect-iceberg-control-order-item-v1
+    sales_activity|postgres-cdc-sales-activity-iceberg-sink|cdc.sales_activity|bronze.bronze_sales_activity_cdc|connect-iceberg-control-sales-activity-v1
+    EOF
+    )
+
+    register_connector() {
+      name="$1"
+      create_payload="$2"
+      config_payload="${3:-}"
+      connector_url="$CONNECT_BASE_URL/connectors/$name"
+      config_url="$connector_url/config"
+
+      if curl -fsS "$connector_url" >/dev/null 2>&1; then
+        if [ -n "$config_payload" ]; then
+          curl -fsS -X PUT \
+            -H "Content-Type: application/json" \
+            --data @"$config_payload" \
+            "$config_url" >/dev/null
+          echo "Connector updated: $name"
+        else
+          echo "Connector already registered, leaving unchanged: $name"
+        fi
+      else
+        curl -fsS -X POST \
+          -H "Content-Type: application/json" \
+          --data @"$create_payload" \
+          "$CONNECT_BASE_URL/connectors" >/dev/null
+      fi
+    }
+
+    wait_for_connect() {
+      attempt=1
+      while [ "$attempt" -le "$CONNECT_READY_ATTEMPTS" ]; do
+        if curl -fsS "$CONNECT_BASE_URL/connectors" >/dev/null 2>&1; then
+          return 0
+        fi
+        sleep "$CONNECT_READY_INTERVAL_SECONDS"
+        attempt=$((attempt + 1))
+      done
+
+      echo "Kafka Connect REST API did not become ready at $CONNECT_BASE_URL" >&2
+      return 1
+    }
+
+    register_postgres_source_connector() {
+      payload_file="$(mktemp)"
+      config_file="$(mktemp)"
+      dollar='$'
+
+      cat >"$config_file" <<EOF
+    {
+      "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+      "database.hostname": "${POSTGRES_CONNECT_HOST:-postgres.data-platform-infra}",
+      "database.port": "${POSTGRES_CONNECT_PORT:-5432}",
+      "database.user": "${POSTGRES_USER:-app_user}",
+      "database.password": "${POSTGRES_PASSWORD:-change-me}",
+      "database.dbname": "${POSTGRES_DB:-app_db}",
+      "topic.prefix": "cdc",
+      "plugin.name": "pgoutput",
+      "slot.name": "debezium_slot",
+      "publication.name": "debezium_publication",
+      "publication.autocreate.mode": "filtered",
+      "table.include.list": "public.sales_rep,public.customer,public.advertiser,public.product,public.campaign,public.campaign_product,public.customer_session,public.order_header,public.order_item,public.sales_activity",
+      "transforms": "route",
+      "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+      "transforms.route.regex": "cdc\\\\.public\\\\.(.*)",
+      "transforms.route.replacement": "cdc.${dollar}1",
+      "tombstones.on.delete": "true",
+      "provide.transaction.metadata": "true",
+      "decimal.handling.mode": "precise",
+      "time.precision.mode": "connect",
+      "snapshot.fetch.size": "2000",
+      "max.batch.size": "2048",
+      "max.queue.size": "8192",
+      "poll.interval.ms": "1000"
+    }
+    EOF
+
+      cat >"$payload_file" <<EOF
+    {
+      "name": "postgres-cdc-connector",
+      "config": $(cat "$config_file")
+    }
+    EOF
+
+      register_connector "postgres-cdc-connector" "$payload_file" "$config_file"
+      rm -f "$payload_file" "$config_file"
+    }
+
+    delete_connector() {
+      name="$1"
+      connector_url="$CONNECT_BASE_URL/connectors/$name"
+
+      if curl -fsS "$connector_url" >/dev/null 2>&1; then
+        curl -fsS -X DELETE "$connector_url" >/dev/null
+        echo "Connector removed: $name"
+      fi
+    }
+
+    register_cdc_sink_connector() {
+      connector_name="$1"
+      source_topic="$2"
+      target_table="$3"
+      control_topic="$4"
+      payload_file="$(mktemp)"
+      config_file="$(mktemp)"
+      extra_config_file="$(mktemp)"
+
+      : >"$extra_config_file"
+      if [ "$connector_name" = "postgres-cdc-customer-session-iceberg-sink" ] || [ "$connector_name" = "postgres-cdc-order-header-iceberg-sink" ]; then
+        cat >"$extra_config_file" <<EOF
+      ,"iceberg.control.commit.interval-ms": "15000"
+      ,"iceberg.control.commit.timeout-ms": "300000"
+    EOF
+      fi
+
+      cat >"$config_file" <<EOF
+    {
+      "connector.class": "org.apache.iceberg.connect.IcebergSinkConnector",
+      "tasks.max": "1",
+      "topics": "$source_topic",
+      "consumer.override.auto.offset.reset": "earliest",
+      "consumer.override.max.poll.records": "500",
+      "consumer.override.max.poll.interval.ms": "900000",
+      "consumer.override.session.timeout.ms": "90000",
+      "consumer.override.heartbeat.interval.ms": "15000",
+      "consumer.override.max.partition.fetch.bytes": "1048576",
+      "errors.tolerance": "all",
+      "errors.log.enable": "true",
+      "errors.log.include.messages": "true",
+      "errors.deadletterqueue.topic.name": "${source_topic}.dlq",
+      "errors.deadletterqueue.topic.replication.factor": "1",
+      "errors.deadletterqueue.context.headers.enable": "true",
+      "iceberg.catalog.type": "rest",
+      "iceberg.catalog.uri": "http://iceberg-rest.data-platform-infra:8181",
+      "iceberg.catalog.warehouse": "s3://warehouse/",
+      "iceberg.catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
+      "iceberg.catalog.s3.endpoint": "http://minio.data-platform-infra:9000",
+      "iceberg.catalog.s3.path-style-access": "true",
+      "iceberg.catalog.s3.access-key-id": "minio",
+      "iceberg.catalog.s3.secret-access-key": "minio123",
+      "iceberg.tables": "$target_table",
+      "iceberg.tables.auto-create-enabled": "false",
+      "iceberg.control.topic": "$control_topic",
+      "iceberg.control.commit.timeout-ms": "180000",
+      "iceberg.control.commit.interval-ms": "5000",
+      "transforms": "cdc,kafkaMeta",
+      "transforms.cdc.type": "org.apache.iceberg.connect.transforms.DebeziumTransform",
+      "transforms.cdc.cdc.target.pattern": "$target_table",
+      "transforms.kafkaMeta.type": "org.apache.iceberg.connect.transforms.KafkaMetadataTransform",
+      "transforms.kafkaMeta.nested": "false",
+      "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+      "key.converter.schemas.enable": "true",
+      "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+      "value.converter.schemas.enable": "true"$(cat "$extra_config_file")
+    }
+    EOF
+
+      cat >"$payload_file" <<EOF
+    {
+      "name": "$connector_name",
+      "config": $(cat "$config_file")
+    }
+    EOF
+
+      register_connector "$connector_name" "$payload_file" "$config_file"
+      rm -f "$payload_file" "$config_file" "$extra_config_file"
+    }
+
+    slug_allowed() {
+      slug="$1"
+      if [ -z "$CONNECT_SINK_ALLOWLIST" ]; then
+        return 0
+      fi
+
+      old_ifs="$IFS"
+      IFS=','
+      for allowed in $CONNECT_SINK_ALLOWLIST; do
+        if [ "$allowed" = "$slug" ]; then
+          IFS="$old_ifs"
+          return 0
+        fi
+      done
+      IFS="$old_ifs"
+      return 1
+    }
+
+    if [ "$CONNECT_ROLE" = "all" ] || [ "$CONNECT_ROLE" = "source" ]; then
+      wait_for_connect
+      register_postgres_source_connector
+    fi
+
+    if [ "$CONNECT_ROLE" = "all" ] || [ "$CONNECT_ROLE" = "sinks" ]; then
+      wait_for_connect
+      printf '%s\n' "$SINK_SPECS" | while IFS='|' read -r slug connector_name source_topic target_table control_topic; do
+        if slug_allowed "$slug"; then
+          register_cdc_sink_connector "$connector_name" "$source_topic" "$target_table" "$control_topic"
+        else
+          delete_connector "$connector_name"
+        fi
+      done
+    fi
+
+    echo "Kafka Connect connectors registered for role: $CONNECT_ROLE allowlist=${CONNECT_SINK_ALLOWLIST:-all}"
+  connector-postgres.json: |
+    {
+      "name": "postgres-cdc-connector",
+      "config": {
+        "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+        "database.hostname": "postgres.data-platform-infra",
+        "database.port": "5432",
+        "database.user": "app_user",
+        "database.password": "app_password",
+        "database.dbname": "app_db",
+        "topic.prefix": "cdc",
+        "plugin.name": "pgoutput",
+        "slot.name": "debezium_slot",
+        "publication.name": "debezium_publication",
+        "publication.autocreate.mode": "filtered",
+        "table.include.list": "public.sales_rep,public.customer,public.advertiser,public.product,public.campaign,public.campaign_product,public.customer_session,public.order_header,public.order_item,public.sales_activity",
+        "transforms": "route",
+        "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+        "transforms.route.regex": "cdc\\.public\\.(.*)",
+        "transforms.route.replacement": "cdc.$1",
+        "tombstones.on.delete": "true",
+        "provide.transaction.metadata": "true",
+        "decimal.handling.mode": "precise",
+        "time.precision.mode": "connect",
+        "snapshot.fetch.size": "2000",
+        "max.batch.size": "2048",
+        "max.queue.size": "8192",
+        "poll.interval.ms": "1000"
+      }
+    }
+  connector-postgres.config.json: |
+    {
+      "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+      "database.hostname": "postgres.data-platform-infra",
+      "database.port": "5432",
+      "database.user": "app_user",
+      "database.password": "app_password",
+      "database.dbname": "app_db",
+      "topic.prefix": "cdc",
+      "plugin.name": "pgoutput",
+      "slot.name": "debezium_slot",
+      "publication.name": "debezium_publication",
+      "publication.autocreate.mode": "filtered",
+      "table.include.list": "public.sales_rep,public.customer,public.advertiser,public.product,public.campaign,public.campaign_product,public.customer_session,public.order_header,public.order_item,public.sales_activity",
+      "transforms": "route",
+      "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+      "transforms.route.regex": "cdc\\.public\\.(.*)",
+      "transforms.route.replacement": "cdc.$1",
+      "tombstones.on.delete": "true",
+      "provide.transaction.metadata": "true",
+      "decimal.handling.mode": "precise",
+      "time.precision.mode": "connect",
+      "snapshot.fetch.size": "2000",
+      "max.batch.size": "2048",
+      "max.queue.size": "8192",
+      "poll.interval.ms": "1000"
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+  namespace: data-platform-infra
+data:
+  KAFKA_CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+  ICEBERG_WAREHOUSE: s3://warehouse/
+  SUPERSET_SECRET_KEY: local-demo-secret-key
+  GIT_REPO_URL: https://github.com/brandon-benge/example-data-pipeline-w-ml.git
+  GIT_REPO_REF: main
+  FLINK_BASE_IMAGE: flink:1.20.3-scala_2.12-java17
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+  namespace: data-platform-ingest
+data:
+  KAFKA_CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+  ICEBERG_WAREHOUSE: s3://warehouse/
+  SUPERSET_SECRET_KEY: local-demo-secret-key
+  GIT_REPO_URL: https://github.com/brandon-benge/example-data-pipeline-w-ml.git
+  GIT_REPO_REF: main
+  FLINK_BASE_IMAGE: flink:1.20.3-scala_2.12-java17
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+  namespace: data-platform-process
+data:
+  KAFKA_CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+  ICEBERG_WAREHOUSE: s3://warehouse/
+  SUPERSET_SECRET_KEY: local-demo-secret-key
+  GIT_REPO_URL: https://github.com/brandon-benge/example-data-pipeline-w-ml.git
+  GIT_REPO_REF: main
+  FLINK_BASE_IMAGE: flink:1.20.3-scala_2.12-java17
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+  namespace: data-platform-serve
+data:
+  KAFKA_CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+  ICEBERG_WAREHOUSE: s3://warehouse/
+  SUPERSET_SECRET_KEY: local-demo-secret-key
+  GIT_REPO_URL: https://github.com/brandon-benge/example-data-pipeline-w-ml.git
+  GIT_REPO_REF: main
+  FLINK_BASE_IMAGE: flink:1.20.3-scala_2.12-java17
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+  namespace: data-platform-govern
+data:
+  KAFKA_CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+  ICEBERG_WAREHOUSE: s3://warehouse/
+  SUPERSET_SECRET_KEY: local-demo-secret-key
+  GIT_REPO_URL: https://github.com/brandon-benge/example-data-pipeline-w-ml.git
+  GIT_REPO_REF: main
+  FLINK_BASE_IMAGE: flink:1.20.3-scala_2.12-java17
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: data-platform-infra
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: do-block-storage
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kafka-data
+  namespace: data-platform-infra
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: do-block-storage
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: data-platform-infra
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: do-block-storage
+  resources:
+    requests:
+      storage: 25Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: superset-home
+  namespace: data-platform-serve
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: do-block-storage
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kafka-connect-plugin-cache
+  namespace: data-platform-ingest
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: do-block-storage
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: data-platform-infra
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: data-platform-infra
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        platform.example.io/stack: ingestion
+    spec:
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command:
+            - /bin/sh
+            - -c
+            - git clone --depth 1 --branch "$GIT_REPO_REF" "$GIT_REPO_URL" /workspace
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+      containers:
+        - name: postgres
+          image: postgres:16
+          imagePullPolicy: Always
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          args: ["-c", "wal_level=logical", "-c", "max_replication_slots=4", "-c", "max_wal_senders=4"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "app_user", "-d", "app_db"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: postgres-persistent
+              mountPath: /var/lib/postgresql/data
+            - name: repo-source
+              mountPath: /docker-entrypoint-initdb.d/init.sql
+              subPath: config/postgres/init.sql
+              readOnly: true
+      volumes:
+        - name: postgres-persistent
+          persistentVolumeClaim:
+            claimName: postgres-data
+        - name: repo-source
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  namespace: data-platform-infra
+  labels:
+    app.kubernetes.io/name: kafka
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: kafka
+  ports:
+    - name: internal
+      port: 9092
+      targetPort: 9092
+    - name: external
+      port: 19092
+      targetPort: 19092
+    - name: controller
+      port: 9093
+      targetPort: 9093
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: data-platform-infra
+  labels:
+    app.kubernetes.io/name: kafka
+spec:
+  selector:
+    app.kubernetes.io/name: kafka
+  ports:
+    - name: internal
+      port: 9092
+      targetPort: 9092
+    - name: external
+      port: 19092
+      targetPort: 19092
+    - name: controller
+      port: 9093
+      targetPort: 9093
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: data-platform-infra
+spec:
+  serviceName: kafka-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+        platform.example.io/stack: ingestion
+    spec:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: kafka
+          image: apache/kafka:4.2.0
+          env:
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: CLUSTER_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: KAFKA_CLUSTER_ID
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: 1@kafka-0.kafka-headless.data-platform-infra.svc.cluster.local:9093
+            - name: KAFKA_LISTENERS
+              value: INTERNAL://:9092,EXTERNAL://:19092,CONTROLLER://:9093
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: INTERNAL://kafka.data-platform-infra:9092,EXTERNAL://localhost:19092
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: CONTROLLER
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: INTERNAL
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "false"
+            - name: KAFKA_LOG_DIRS
+              value: /var/lib/kafka/data
+            - name: KAFKA_NUM_PARTITIONS
+              value: "1"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_HEAP_OPTS
+              value: -Xms512m -Xmx512m
+          ports:
+            - containerPort: 9092
+            - containerPort: 19092
+            - containerPort: 9093
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+          volumeMounts:
+            - name: kafka-persistent
+              mountPath: /var/lib/kafka
+      volumes:
+        - name: kafka-persistent
+          persistentVolumeClaim:
+            claimName: kafka-data
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-bootstrap
+  namespace: data-platform-infra
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-bootstrap
+        platform.example.io/stack: ingestion
+    spec:
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command: ["/bin/sh", "-c", "git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+        - name: wait-for-kafka
+          image: apache/kafka:4.2.0
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              attempt=0
+              until /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka.data-platform-infra:9092 --list >/dev/null 2>&1; do
+                attempt=$((attempt + 1))
+                if [ "$attempt" -ge 60 ]; then
+                  echo "Kafka admin endpoint did not become ready in time." >&2
+                  exit 1
+                fi
+                sleep 2
+              done
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-bootstrap
+          image: apache/kafka:4.2.0
+          command: ["/bin/sh", "/bootstrap-tools/bootstrap-topics.sh"]
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka.data-platform-infra:9092
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /config/kafka
+              subPath: config/kafka
+            - name: kafka-bootstrap-tools
+              mountPath: /bootstrap-tools
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+        - name: kafka-bootstrap-tools
+          configMap:
+            name: kafka-bootstrap-tools
+            defaultMode: 0755
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: schema-registry
+  namespace: data-platform-infra
+  labels:
+    app.kubernetes.io/name: schema-registry
+spec:
+  selector:
+    app.kubernetes.io/name: schema-registry
+  ports:
+    - port: 8081
+      targetPort: 8081
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: schema-registry
+  namespace: data-platform-infra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: schema-registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: schema-registry
+        platform.example.io/stack: ingestion
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: schema-registry
+          image: confluentinc/cp-schema-registry:7.6.1
+          env:
+            - name: SCHEMA_REGISTRY_HOST_NAME
+              value: schema-registry
+            - name: SCHEMA_REGISTRY_LISTENERS
+              value: http://0.0.0.0:8081
+            - name: SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS
+              value: PLAINTEXT://kafka.data-platform-infra:9092
+            - name: SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR
+              value: "1"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          ports:
+            - containerPort: 8081
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: schema-registry-bootstrap
+  namespace: data-platform-infra
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: schema-registry-bootstrap
+        platform.example.io/stack: ingestion
+    spec:
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command: ["/bin/sh", "-c", "git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+      restartPolicy: OnFailure
+      containers:
+        - name: schema-registry-bootstrap
+          image: curlimages/curl:8.7.1
+          command: ["/bin/sh", "/config/schema-registry/register-subjects.sh"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /config/schema-registry
+              subPath: config/schema-registry
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-connect-source
+  namespace: data-platform-ingest
+  labels:
+    app.kubernetes.io/name: kafka-connect-source
+spec:
+  selector:
+    app.kubernetes.io/name: kafka-connect-source
+  ports:
+    - port: 8083
+      targetPort: 8083
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-connect-source
+  namespace: data-platform-ingest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-connect-source
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-connect-source
+        platform.example.io/stack: ingestion
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command: ["/bin/sh", "-c", "git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+      containers:
+        - name: kafka-connect-source
+          image: quay.io/debezium/connect:3.3.2.Final
+          env:
+            - name: BOOTSTRAP_SERVERS
+              value: kafka.data-platform-infra:9092
+            - name: GROUP_ID
+              value: "1"
+            - name: CONFIG_STORAGE_TOPIC
+              value: debezium_source_connect_configs
+            - name: OFFSET_STORAGE_TOPIC
+              value: debezium_source_connect_offsets
+            - name: STATUS_STORAGE_TOPIC
+              value: debezium_source_connect_statuses
+            - name: CONFIG_STORAGE_REPLICATION_FACTOR
+              value: "1"
+            - name: OFFSET_STORAGE_REPLICATION_FACTOR
+              value: "1"
+            - name: STATUS_STORAGE_REPLICATION_FACTOR
+              value: "1"
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: KAFKA_HEAP_OPTS
+              value: -Xms256M -Xmx1G
+            - name: REST_HOST_NAME
+              value: kafka-connect-source
+            - name: ADVERTISED_HOST_NAME
+              value: kafka-connect-source
+            - name: CONNECT_PLUGIN_PATH
+              value: /kafka/connect
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          ports:
+            - containerPort: 8083
+          volumeMounts:
+            - name: repo-source
+              mountPath: /kafka/config/log4j.properties
+              subPath: config/debezium/connect-log4j.properties
+              readOnly: true
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-connect-source-bootstrap
+  namespace: data-platform-ingest
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-connect-source-bootstrap
+        platform.example.io/stack: ingestion
+    spec:
+      restartPolicy: OnFailure
+      tolerations:
+        - key: node.kubernetes.io/memory-pressure
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: kafka-connect-source-bootstrap
+          image: curlimages/curl:8.7.1
+          command: ["/bin/sh", "/config/debezium/register-connector.sh"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          env:
+            - name: CONNECT_BASE_URL
+              value: http://kafka-connect-source.data-platform-ingest:8083
+            - name: CONNECT_ROLE
+              value: source
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: debezium-bootstrap-config
+              mountPath: /config/debezium
+      volumes:
+        - name: debezium-bootstrap-config
+          configMap:
+            name: debezium-bootstrap-config
+            defaultMode: 0755
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: data-platform-infra
+  labels:
+    app.kubernetes.io/name: minio
+spec:
+  selector:
+    app.kubernetes.io/name: minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: minio
+  namespace: data-platform-infra
+spec:
+  serviceName: minio
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio
+        platform.example.io/stack: stream-processing
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: MINIO_ROOT_PASSWORD
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          ports:
+            - containerPort: 9000
+            - containerPort: 9001
+          volumeMounts:
+            - name: minio-persistent
+              mountPath: /data
+      volumes:
+        - name: minio-persistent
+          persistentVolumeClaim:
+            claimName: minio-data
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-bootstrap
+  namespace: data-platform-infra
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio-bootstrap
+        platform.example.io/stack: stream-processing
+    spec:
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command: ["/bin/sh", "-c", "git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+      restartPolicy: OnFailure
+      containers:
+        - name: minio-bootstrap
+          image: minio/mc:RELEASE.2025-02-21T16-00-46Z
+          command: ["/bin/sh", "/config/iceberg/bootstrap-warehouse.sh"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: MINIO_ROOT_PASSWORD
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /config/iceberg
+              subPath: config/iceberg
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iceberg-rest
+  namespace: data-platform-infra
+  labels:
+    app.kubernetes.io/name: iceberg-rest
+spec:
+  selector:
+    app.kubernetes.io/name: iceberg-rest
+  ports:
+    - port: 8181
+      targetPort: 8181
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iceberg-rest
+  namespace: data-platform-infra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iceberg-rest
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iceberg-rest
+        platform.example.io/stack: stream-processing
+    spec:
+      containers:
+        - name: iceberg-rest
+          image: tabulario/iceberg-rest:1.6.0
+          env:
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: CATALOG_WAREHOUSE
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: ICEBERG_WAREHOUSE
+            - name: CATALOG_IO__IMPL
+              value: org.apache.iceberg.aws.s3.S3FileIO
+            - name: CATALOG_S3_ENDPOINT
+              value: http://minio.data-platform-infra:9000
+            - name: CATALOG_S3_PATH__STYLE__ACCESS
+              value: "true"
+            - name: CATALOG_URI
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: ICEBERG_CATALOG_URI
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          ports:
+            - containerPort: 8181
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trino
+  namespace: data-platform-serve
+  labels:
+    app.kubernetes.io/name: trino
+spec:
+  selector:
+    app.kubernetes.io/name: trino
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trino
+  namespace: data-platform-serve
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trino
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trino
+        platform.example.io/stack: batch
+    spec:
+      priorityClassName: platform-batch-low
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command:
+            - /bin/sh
+            - -c
+            - git clone --depth 1 --branch "$GIT_REPO_REF" "$GIT_REPO_URL" /workspace
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+      containers:
+        - name: trino
+          image: trinodb/trino:448
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: repo-source
+              mountPath: /etc/trino/config.properties
+              subPath: config/trino/config.properties
+              readOnly: true
+            - name: repo-source
+              mountPath: /etc/trino/jvm.config
+              subPath: config/trino/jvm.config
+              readOnly: true
+            - name: repo-source
+              mountPath: /etc/trino/catalog/iceberg.properties
+              subPath: config/trino/catalog/iceberg.properties
+              readOnly: true
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: iceberg-cdc-bootstrap
+  namespace: data-platform-infra
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iceberg-cdc-bootstrap
+        platform.example.io/stack: stream-processing
+    spec:
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command: ["/bin/sh", "-c", "git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+      restartPolicy: OnFailure
+      containers:
+        - name: iceberg-cdc-bootstrap
+          image: trinodb/trino:448
+          command: ["/bin/sh", "/config/iceberg/bootstrap-cdc-rest-catalog.sh"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /config/iceberg
+              subPath: config/iceberg
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-connect-sinks
+  namespace: data-platform-ingest
+  labels:
+    app.kubernetes.io/name: kafka-connect-sinks
+spec:
+  selector:
+    app.kubernetes.io/name: kafka-connect-sinks
+  ports:
+    - port: 8083
+      targetPort: 8083
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-connect-sinks
+  namespace: data-platform-ingest
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-connect-sinks
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-connect-sinks
+        platform.example.io/stack: stream-processing
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command: ["/bin/sh", "-c", "git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+        - name: verify-iceberg-plugin-cache
+          image: busybox:1.36.1
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              if find /plugin/iceberg -maxdepth 1 -name '*.jar' | grep -q .; then
+                echo "Iceberg Kafka Connect plugin cache present"
+                exit 0
+              fi
+              echo "Iceberg Kafka Connect plugin cache is empty at /plugin/iceberg" >&2
+              echo "Populate pvc/kafka-connect-plugin-cache before starting kafka-connect-sinks." >&2
+              exit 1
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: connect-plugins
+              mountPath: /plugin
+      containers:
+        - name: kafka-connect-sinks
+          image: quay.io/debezium/connect:3.3.2.Final
+          env:
+            - name: BOOTSTRAP_SERVERS
+              value: kafka.data-platform-infra:9092
+            - name: GROUP_ID
+              value: "2"
+            - name: CONFIG_STORAGE_TOPIC
+              value: debezium_sink_connect_configs
+            - name: OFFSET_STORAGE_TOPIC
+              value: debezium_sink_connect_offsets
+            - name: STATUS_STORAGE_TOPIC
+              value: debezium_sink_connect_statuses
+            - name: CONFIG_STORAGE_REPLICATION_FACTOR
+              value: "1"
+            - name: OFFSET_STORAGE_REPLICATION_FACTOR
+              value: "1"
+            - name: STATUS_STORAGE_REPLICATION_FACTOR
+              value: "1"
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: KAFKA_HEAP_OPTS
+              value: -Xms256M -Xmx1G
+            - name: REST_HOST_NAME
+              value: kafka-connect-sinks
+            - name: ADVERTISED_HOST_NAME
+              value: kafka-connect-sinks
+            - name: CONNECT_PLUGIN_PATH
+              value: /kafka/connect
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          ports:
+            - containerPort: 8083
+          volumeMounts:
+            - name: repo-source
+              mountPath: /kafka/config/log4j.properties
+              subPath: config/debezium/connect-log4j.properties
+              readOnly: true
+            - name: connect-plugins
+              mountPath: /kafka/connect/iceberg
+              subPath: iceberg
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+        - name: connect-plugins
+          persistentVolumeClaim:
+            claimName: kafka-connect-plugin-cache
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-connect-sinks-bootstrap
+  namespace: data-platform-ingest
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-connect-sinks-bootstrap
+        platform.example.io/stack: stream-processing
+    spec:
+      restartPolicy: OnFailure
+      tolerations:
+        - key: node.kubernetes.io/memory-pressure
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: kafka-connect-sinks-bootstrap
+          image: curlimages/curl:8.7.1
+          command: ["/bin/sh", "/config/debezium/register-connector.sh"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          env:
+            - name: CONNECT_BASE_URL
+              value: http://kafka-connect-sinks.data-platform-ingest:8083
+            - name: CONNECT_ROLE
+              value: sinks
+          volumeMounts:
+            - name: debezium-bootstrap-config
+              mountPath: /config/debezium
+      volumes:
+        - name: debezium-bootstrap-config
+          configMap:
+            name: debezium-bootstrap-config
+            defaultMode: 0755
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flink-jobmanager
+  namespace: data-platform-process
+  labels:
+    app.kubernetes.io/name: flink-jobmanager
+spec:
+  selector:
+    app.kubernetes.io/name: flink-jobmanager
+  ports:
+    - port: 8081
+      targetPort: 8081
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flink-bootstrap-script
+  namespace: data-platform-process
+data:
+  bootstrap-flink.sh: |
+    #!/bin/sh
+    set -eu
+    mkdir -p /tmp/flink-conf /tmp/flink-tmp /opt/flink/state/checkpoints /opt/flink/state/savepoints
+    cp -R /opt/flink/conf/. /tmp/flink-conf/
+    cp /opt/flink/usrlib/repo/config/flink/flink-conf.yaml /tmp/flink-conf/flink-conf.yaml
+    export FLINK_CONF_DIR=/tmp/flink-conf
+    export JAVA_TOOL_OPTIONS="--add-opens=java.base/java.net=ALL-UNNAMED -Djava.io.tmpdir=/tmp/flink-tmp ${JAVA_TOOL_OPTIONS:-}"
+    extra_classpath=""
+    for jar in /opt/flink/usrlib/repo/flink/jars/*.jar; do
+      if [ -f "$jar" ]; then
+        target="/opt/flink/lib/$(basename "$jar")"
+        if [ ! -e "$target" ]; then
+          ln -sf "$jar" "$target"
+        fi
+        if [ -n "$extra_classpath" ]; then
+          extra_classpath="${extra_classpath}:"
+        fi
+        extra_classpath="${extra_classpath}${jar}"
+      fi
+    done
+    if [ -n "$extra_classpath" ]; then
+      export FLINK_CLASSPATH="${extra_classpath}${FLINK_CLASSPATH:+:${FLINK_CLASSPATH}}"
+    fi
+    chmod 1777 /tmp /tmp/flink-tmp
+    chmod -R 777 /tmp/flink-conf /opt/flink/state
+    if ! command -v python3 >/dev/null 2>&1; then
+      apt-get update
+      apt-get install -y --no-install-recommends python3 python3-pip
+      rm -rf /var/lib/apt/lists/*
+    fi
+    if [ ! -x /usr/bin/python ]; then
+      ln -sf /usr/bin/python3 /usr/bin/python
+    fi
+    exec /bin/sh "$@"
+  start-flink.sh: |
+    #!/bin/sh
+    set -eu
+
+    STALE_MINUTES="${TEMP_DIR_TTL_MINUTES:-20}"
+
+    cleanup_path() {
+      path="$1"
+      if [ -e "$path" ]; then
+        if [ -d "$path" ]; then
+          find "$path" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+        else
+          rm -f "$path"
+        fi
+      fi
+    }
+
+    cleanup_startup_paths() {
+      cleanup_path /tmp/flink-tmp
+      cleanup_stale_paths
+    }
+
+    cleanup_stale_paths() {
+      find /tmp -maxdepth 1 \( \
+        -name 'tm_*' -o \
+        -name 'flink-dist-cache-*' -o \
+        -name 'flink-io-*' -o \
+        -name 'flink-netty-shuffle-*' -o \
+        -name 'python-dist-*' -o \
+        -name 'flink-rpc-akka*.jar' \
+      \) -mmin +"$STALE_MINUTES" -exec rm -rf {} +
+    }
+
+    cleanup_startup_paths
+
+    mkdir -p /tmp/flink-tmp
+
+    role="${1:-}"
+
+    case "$role" in
+      jobmanager)
+        exec /opt/flink/bin/jobmanager.sh start-foreground
+        ;;
+      taskmanager)
+        exec /opt/flink/bin/taskmanager.sh start-foreground
+        ;;
+      *)
+        echo "Usage: $0 <jobmanager|taskmanager>" >&2
+        exit 1
+        ;;
+    esac
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-jobmanager
+  namespace: data-platform-process
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flink-jobmanager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flink-jobmanager
+        platform.example.io/stack: stream-processing
+    spec:
+      priorityClassName: platform-flink-high
+      initContainers:
+        - name: prepare-flink-tmp
+          image: busybox:1.36
+          command: ["/bin/sh", "-c", "mkdir -p /tmp/flink-tmp && chmod 1777 /tmp/flink-tmp"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: flink-tmp
+              mountPath: /tmp/flink-tmp
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command: ["/bin/sh", "-c", "git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+        - name: flink-jars
+          image: curlimages/curl:8.7.1
+          command: ["/bin/sh", "/workspace/config/flink/download-jars.sh"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+            - name: flink-jars
+              mountPath: /opt/flink/usrlib/repo/flink/jars
+        - name: flink-deps
+          image: python:3.11-slim
+          command:
+            - /bin/sh
+            - -c
+            - python -m pip install --no-cache-dir --target /deps apache-beam==2.54.0 grpcio avro-python3 async-timeout -r /workspace/flink/requirements.txt
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+            - name: flink-deps
+              mountPath: /deps
+      containers:
+        - name: flink-jobmanager
+          image: flink:1.20.3-scala_2.12-java17
+          securityContext:
+            runAsUser: 0
+          command: ["/bin/sh", "/bootstrap/bootstrap-flink.sh", "/opt/flink/bootstrap/start-flink.sh", "jobmanager"]
+          env:
+            - name: JOB_MANAGER_RPC_ADDRESS
+              value: flink-jobmanager
+            - name: ICEBERG_REST_URI
+              value: http://iceberg-rest.data-platform-infra:8181
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: FLINK_JOB_POLL_SECONDS
+              value: "15"
+            - name: TEMP_DIR_TTL_MINUTES
+              value: "20"
+            - name: PYTHONPATH
+              value: /opt/flink/usrlib/repo/flink:/opt/flink/opt/python/pyflink_pkg:/opt/flink/opt/python/py4j-0.10.9.7-src.zip:/opt/flink/usrlib/repo:/opt/flink/usrlib/repo/flink/.deps
+            - name: FLINK_PIPELINE_JARS
+              value: file:///opt/flink/opt/flink-python-1.20.3.jar;file:///opt/flink/usrlib/repo/flink/jars/iceberg-flink-runtime-1.20-1.10.1.jar;file:///opt/flink/usrlib/repo/flink/jars/flink-sql-connector-kafka-3.3.0-1.20.jar;file:///opt/flink/usrlib/repo/flink/jars/hadoop-client-api-3.4.1.jar;file:///opt/flink/usrlib/repo/flink/jars/hadoop-client-runtime-3.4.1.jar;file:///opt/flink/usrlib/repo/flink/jars/iceberg-aws-bundle-1.10.1.jar
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1536Mi
+            limits:
+              cpu: "2"
+              memory: 3Gi
+          ports:
+            - containerPort: 8081
+          volumeMounts:
+            - name: repo-source
+              mountPath: /opt/flink/usrlib/repo
+            - name: repo-source
+              mountPath: /opt/flink/bootstrap
+              subPath: config/flink
+            - name: flink-bootstrap-script
+              mountPath: /opt/flink/bootstrap/start-flink.sh
+              subPath: start-flink.sh
+            - name: flink-jars
+              mountPath: /opt/flink/usrlib/repo/flink/jars
+            - name: flink-deps
+              mountPath: /opt/flink/usrlib/repo/flink/.deps
+            - name: flink-bootstrap-script
+              mountPath: /bootstrap
+            - name: flink-tmp
+              mountPath: /tmp/flink-tmp
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+        - name: flink-jars
+          emptyDir: {}
+        - name: flink-deps
+          emptyDir: {}
+        - name: flink-tmp
+          emptyDir: {}
+        - name: flink-bootstrap-script
+          configMap:
+            name: flink-bootstrap-script
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-taskmanager
+  namespace: data-platform-process
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flink-taskmanager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flink-taskmanager
+        platform.example.io/stack: stream-processing
+    spec:
+      priorityClassName: platform-flink-high
+      initContainers:
+        - name: prepare-flink-tmp
+          image: busybox:1.36
+          command: ["/bin/sh", "-c", "mkdir -p /tmp/flink-tmp && chmod 1777 /tmp/flink-tmp"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: flink-tmp
+              mountPath: /tmp/flink-tmp
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command: ["/bin/sh", "-c", "git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+        - name: flink-jars
+          image: curlimages/curl:8.7.1
+          command: ["/bin/sh", "/workspace/config/flink/download-jars.sh"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+            - name: flink-jars
+              mountPath: /opt/flink/usrlib/repo/flink/jars
+        - name: flink-deps
+          image: python:3.11-slim
+          command:
+            - /bin/sh
+            - -c
+            - python -m pip install --no-cache-dir --target /deps apache-beam==2.54.0 grpcio avro-python3 async-timeout -r /workspace/flink/requirements.txt
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+            - name: flink-deps
+              mountPath: /deps
+      containers:
+        - name: flink-taskmanager
+          image: flink:1.20.3-scala_2.12-java17
+          securityContext:
+            runAsUser: 0
+          command: ["/bin/sh", "/bootstrap/bootstrap-flink.sh", "/opt/flink/bootstrap/start-flink.sh", "taskmanager"]
+          env:
+            - name: JOB_MANAGER_RPC_ADDRESS
+              value: flink-jobmanager
+            - name: ICEBERG_REST_URI
+              value: http://iceberg-rest.data-platform-infra:8181
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: FLINK_JOB_POLL_SECONDS
+              value: "15"
+            - name: TEMP_DIR_TTL_MINUTES
+              value: "20"
+            - name: PYTHONPATH
+              value: /opt/flink/usrlib/repo/flink:/opt/flink/opt/python/pyflink_pkg:/opt/flink/opt/python/py4j-0.10.9.7-src.zip:/opt/flink/usrlib/repo:/opt/flink/usrlib/repo/flink/.deps
+            - name: FLINK_PIPELINE_JARS
+              value: file:///opt/flink/opt/flink-python-1.20.3.jar;file:///opt/flink/usrlib/repo/flink/jars/iceberg-flink-runtime-1.20-1.10.1.jar;file:///opt/flink/usrlib/repo/flink/jars/flink-sql-connector-kafka-3.3.0-1.20.jar;file:///opt/flink/usrlib/repo/flink/jars/hadoop-client-api-3.4.1.jar;file:///opt/flink/usrlib/repo/flink/jars/hadoop-client-runtime-3.4.1.jar;file:///opt/flink/usrlib/repo/flink/jars/iceberg-aws-bundle-1.10.1.jar
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4608Mi
+            limits:
+              cpu: "3"
+              memory: 7Gi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /opt/flink/usrlib/repo
+            - name: repo-source
+              mountPath: /opt/flink/bootstrap
+              subPath: config/flink
+            - name: flink-bootstrap-script
+              mountPath: /opt/flink/bootstrap/start-flink.sh
+              subPath: start-flink.sh
+            - name: flink-jars
+              mountPath: /opt/flink/usrlib/repo/flink/jars
+            - name: flink-deps
+              mountPath: /opt/flink/usrlib/repo/flink/.deps
+            - name: flink-bootstrap-script
+              mountPath: /bootstrap
+            - name: flink-tmp
+              mountPath: /tmp/flink-tmp
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+        - name: flink-jars
+          emptyDir: {}
+        - name: flink-deps
+          emptyDir: {}
+        - name: flink-tmp
+          emptyDir: {}
+        - name: flink-bootstrap-script
+          configMap:
+            name: flink-bootstrap-script
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flink-bootstrap-bronze-events
+  namespace: data-platform-process
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flink-bootstrap-bronze-events
+        platform.example.io/stack: stream-processing
+    spec:
+      priorityClassName: platform-flink-high
+      initContainers:
+        - name: prepare-flink-tmp
+          image: busybox:1.36
+          command: ["/bin/sh", "-c", "mkdir -p /tmp/flink-tmp && chmod 1777 /tmp/flink-tmp"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: flink-tmp
+              mountPath: /tmp/flink-tmp
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command: ["/bin/sh", "-c", "git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+        - name: flink-jars
+          image: curlimages/curl:8.7.1
+          command: ["/bin/sh", "/workspace/config/flink/download-jars.sh"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+            - name: flink-jars
+              mountPath: /opt/flink/usrlib/repo/flink/jars
+        - name: flink-deps
+          image: python:3.11-slim
+          command:
+            - /bin/sh
+            - -c
+            - python -m pip install --no-cache-dir --target /deps apache-beam==2.54.0 grpcio avro-python3 async-timeout -r /workspace/flink/requirements.txt
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+            - name: flink-deps
+              mountPath: /deps
+      restartPolicy: OnFailure
+      containers:
+        - name: flink-bootstrap-bronze-events
+          image: flink:1.20.3-scala_2.12-java17
+          securityContext:
+            runAsUser: 0
+          command: ["/bin/sh", "/bootstrap/bootstrap-flink.sh", "/opt/flink/bootstrap/submit-jobs.sh", "bronze-events-to-iceberg", "flink.jobs.bronze_events_to_iceberg"]
+          env:
+            - name: JOB_MANAGER_RPC_ADDRESS
+              value: flink-jobmanager
+            - name: ICEBERG_REST_URI
+              value: http://iceberg-rest.data-platform-infra:8181
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: FLINK_PARALLELISM
+              value: "4"
+            - name: FLINK_JOB_PARALLELISM
+              value: "4"
+            - name: PYTHONPATH
+              value: /opt/flink/usrlib/repo/flink:/opt/flink/opt/python/pyflink_pkg:/opt/flink/opt/python/py4j-0.10.9.7-src.zip:/opt/flink/usrlib/repo:/opt/flink/usrlib/repo/flink/.deps
+            - name: FLINK_PIPELINE_JARS
+              value: file:///opt/flink/opt/flink-python-1.20.3.jar;file:///opt/flink/usrlib/repo/flink/jars/iceberg-flink-runtime-1.20-1.10.1.jar;file:///opt/flink/usrlib/repo/flink/jars/flink-sql-connector-kafka-3.3.0-1.20.jar;file:///opt/flink/usrlib/repo/flink/jars/hadoop-client-api-3.4.1.jar;file:///opt/flink/usrlib/repo/flink/jars/hadoop-client-runtime-3.4.1.jar;file:///opt/flink/usrlib/repo/flink/jars/iceberg-aws-bundle-1.10.1.jar
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1536Mi
+            limits:
+              cpu: "2"
+              memory: 3Gi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /opt/flink/usrlib/repo
+            - name: repo-source
+              mountPath: /opt/flink/bootstrap
+              subPath: config/flink
+            - name: flink-jars
+              mountPath: /opt/flink/usrlib/repo/flink/jars
+            - name: flink-deps
+              mountPath: /opt/flink/usrlib/repo/flink/.deps
+            - name: flink-bootstrap-script
+              mountPath: /bootstrap
+            - name: flink-tmp
+              mountPath: /tmp/flink-tmp
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+        - name: flink-jars
+          emptyDir: {}
+        - name: flink-deps
+          emptyDir: {}
+        - name: flink-tmp
+          emptyDir: {}
+        - name: flink-bootstrap-script
+          configMap:
+            name: flink-bootstrap-script
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark
+  namespace: data-platform-process
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: spark
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: spark
+        platform.example.io/stack: batch
+    spec:
+      priorityClassName: platform-batch-low
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command:
+            - /bin/sh
+            - -c
+            - git clone --depth 1 --branch "$GIT_REPO_REF" "$GIT_REPO_URL" /workspace
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+        - name: spark-jars
+          image: curlimages/curl:8.7.1
+          command: ["/bin/sh", "/app/config/spark/download-jars.sh"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /app
+            - name: spark-jars
+              mountPath: /app/spark/jars
+      containers:
+        - name: spark
+          image: spark:4.0.1-python3
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_REGION
+              value: us-east-1
+            - name: PYTHONPATH
+              value: /app
+            - name: SPARK_CONF_DIR
+              value: /app/config/spark
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          command: ["/bin/sh", "-c", "sleep infinity"]
+          volumeMounts:
+            - name: repo-source
+              mountPath: /app
+            - name: spark-jars
+              mountPath: /app/spark/jars
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+        - name: spark-jars
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-bootstrap
+  namespace: data-platform-process
+  labels:
+    app.kubernetes.io/name: spark-bootstrap
+spec:
+  selector:
+    app.kubernetes.io/name: spark-bootstrap
+  ports:
+    - port: 4040
+      targetPort: 4040
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-bootstrap
+  namespace: data-platform-process
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: spark-bootstrap
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: spark-bootstrap
+        platform.example.io/stack: batch
+    spec:
+      priorityClassName: platform-batch-low
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command:
+            - /bin/sh
+            - -c
+            - git clone --depth 1 --branch "$GIT_REPO_REF" "$GIT_REPO_URL" /workspace
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+        - name: spark-jars
+          image: curlimages/curl:8.7.1
+          command: ["/bin/sh", "/app/config/spark/download-jars.sh"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /app
+            - name: spark-jars
+              mountPath: /app/spark/jars
+      containers:
+        - name: spark-bootstrap
+          image: spark:4.0.1-python3
+          command: ["/bin/sh", "/app/bootstrap/start-scheduler.sh"]
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_REGION
+              value: us-east-1
+            - name: PYTHONPATH
+              value: /app
+            - name: SPARK_CONF_DIR
+              value: /app/config/spark
+            - name: SPARK_BATCH_INTERVAL_SECONDS
+              value: "60"
+            - name: TEMP_DIR_TTL_MINUTES
+              value: "20"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 768Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+          ports:
+            - containerPort: 4040
+          volumeMounts:
+            - name: repo-source
+              mountPath: /app
+            - name: spark-jars
+              mountPath: /app/spark/jars
+            - name: repo-source
+              mountPath: /app/bootstrap
+              subPath: config/spark
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+        - name: spark-jars
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dbt
+  namespace: data-platform-process
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dbt
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dbt
+        platform.example.io/stack: batch
+    spec:
+      priorityClassName: platform-batch-low
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command:
+            - /bin/sh
+            - -c
+            - git clone --depth 1 --branch "$GIT_REPO_REF" "$GIT_REPO_URL" /workspace
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+        - name: spark-jars
+          image: curlimages/curl:8.7.1
+          command: ["/bin/sh", "/app/config/spark/download-jars.sh"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /app
+            - name: spark-jars
+              mountPath: /app/spark/jars
+      containers:
+        - name: dbt
+          image: spark:4.0.1-python3
+          securityContext:
+            runAsUser: 0
+          command:
+            - /bin/sh
+            - -c
+            - /bin/sh /app/bootstrap/bootstrap.sh && sleep infinity
+          workingDir: /app/dbt
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              value: minio
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minio123
+            - name: DBT_PROFILES_DIR
+              value: /tmp/dbt-profiles
+            - name: HOME
+              value: /tmp/dbt-home
+            - name: PATH
+              value: /tmp/dbt-home/.local/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            - name: PIP_DISABLE_PIP_VERSION_CHECK
+              value: "1"
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: SPARK_CONF_DIR
+              value: /app/config/spark
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /app
+            - name: spark-jars
+              mountPath: /app/spark/jars
+            - name: repo-source
+              mountPath: /app/bootstrap
+              subPath: config/dbt
+            - name: repo-source
+              mountPath: /tmp/dbt-profiles/profiles.yml
+              subPath: config/dbt/profiles.yml
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+        - name: spark-jars
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dbt-scheduler
+  namespace: data-platform-process
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dbt-scheduler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dbt-scheduler
+        platform.example.io/stack: batch
+    spec:
+      priorityClassName: platform-batch-low
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command:
+            - /bin/sh
+            - -c
+            - git clone --depth 1 --branch "$GIT_REPO_REF" "$GIT_REPO_URL" /workspace
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+        - name: spark-jars
+          image: curlimages/curl:8.7.1
+          command: ["/bin/sh", "/app/config/spark/download-jars.sh"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /app
+            - name: spark-jars
+              mountPath: /app/spark/jars
+      containers:
+        - name: dbt-scheduler
+          image: spark:4.0.1-python3
+          securityContext:
+            runAsUser: 0
+          command: ["/bin/sh", "-c", "/bin/sh /app/bootstrap/run-scheduler.sh"]
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              value: minio
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minio123
+            - name: DBT_PROFILES_DIR
+              value: /tmp/dbt-profiles
+            - name: HOME
+              value: /tmp/dbt-home
+            - name: PATH
+              value: /tmp/dbt-home/.local/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            - name: PIP_DISABLE_PIP_VERSION_CHECK
+              value: "1"
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: SPARK_CONF_DIR
+              value: /app/config/spark
+            - name: DBT_BUILD_CHUNK_SLEEP_SECONDS
+              value: "0.1"
+            - name: DBT_BUILD_INTERVAL_SECONDS
+              value: "120"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          workingDir: /app/dbt
+          volumeMounts:
+            - name: repo-source
+              mountPath: /app
+            - name: spark-jars
+              mountPath: /app/spark/jars
+            - name: repo-source
+              mountPath: /app/bootstrap
+              subPath: config/dbt
+            - name: repo-source
+              mountPath: /tmp/dbt-profiles/profiles.yml
+              subPath: config/dbt/profiles.yml
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+        - name: spark-jars
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metadata
+  namespace: data-platform-govern
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: metadata
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: metadata
+        platform.example.io/stack: analytics
+    spec:
+      priorityClassName: platform-batch-low
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command: ["/bin/sh", "-c", "git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+      containers:
+        - name: metadata
+          image: python:3.11-slim
+          command: ["python", "-m", "http.server", "9002", "--directory", "/srv/metadata"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          ports:
+            - containerPort: 9002
+          volumeMounts:
+            - name: repo-source
+              mountPath: /srv/metadata
+              subPath: metadata
+            - name: repo-source
+              mountPath: /srv/governance
+              subPath: config/governance
+            - name: repo-source
+              mountPath: /srv/features
+              subPath: config/features
+      volumes:
+        - name: repo-source
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metadata
+  namespace: data-platform-govern
+  labels:
+    app.kubernetes.io/name: metadata
+spec:
+  selector:
+    app.kubernetes.io/name: metadata
+  ports:
+    - port: 9002
+      targetPort: 9002
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: superset
+  namespace: data-platform-serve
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: superset
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: superset
+        platform.example.io/stack: analytics
+    spec:
+      priorityClassName: platform-batch-low
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command: ["/bin/sh", "-c", "git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+      containers:
+        - name: superset
+          image: apache/superset:3.1.1
+          env:
+            - name: HOME
+              value: /tmp/superset-home
+            - name: PYTHONUSERBASE
+              value: /tmp/superset-python
+            - name: PATH
+              value: /tmp/superset-python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            - name: SUPERSET_SECRET_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: SUPERSET_SECRET_KEY
+            - name: SUPERSET_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: SUPERSET_ADMIN_USERNAME
+            - name: SUPERSET_ADMIN_FIRSTNAME
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: SUPERSET_ADMIN_FIRSTNAME
+            - name: SUPERSET_ADMIN_LASTNAME
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: SUPERSET_ADMIN_LASTNAME
+            - name: SUPERSET_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: SUPERSET_ADMIN_EMAIL
+            - name: SUPERSET_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: SUPERSET_ADMIN_PASSWORD
+            - name: PYTHONPATH
+              value: /app/pythonpath
+            - name: SUPERSET_CONFIG_PATH
+              value: /app/pythonpath/superset_config.py
+          command:
+            - /bin/sh
+            - -c
+            - /bin/sh /app/bootstrap/bootstrap_python.sh && gunicorn --bind 0.0.0.0:8088 'superset.app:create_app()'
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          ports:
+            - containerPort: 8088
+          volumeMounts:
+            - name: superset-home
+              mountPath: /app/superset_home
+            - name: repo-source
+              mountPath: /app/pythonpath/superset_config.py
+              subPath: config/superset/superset_config.py
+            - name: repo-source
+              mountPath: /app/bootstrap
+              subPath: config/superset/bootstrap
+            - name: repo-source
+              mountPath: /app/bi
+              subPath: bi
+      volumes:
+        - name: superset-home
+          persistentVolumeClaim:
+            claimName: superset-home
+        - name: repo-source
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: superset
+  namespace: data-platform-serve
+  labels:
+    app.kubernetes.io/name: superset
+spec:
+  selector:
+    app.kubernetes.io/name: superset
+  ports:
+    - port: 8088
+      targetPort: 8088
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: superset-bootstrap
+  namespace: data-platform-serve
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: superset-bootstrap
+        platform.example.io/stack: analytics
+    spec:
+      priorityClassName: platform-batch-low
+      initContainers:
+        - name: repo-sync
+          image: alpine/git:2.47.2
+          env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_URL
+            - name: GIT_REPO_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: GIT_REPO_REF
+          command: ["/bin/sh", "-c", "git clone --depth 1 --branch \"$GIT_REPO_REF\" \"$GIT_REPO_URL\" /workspace"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repo-source
+              mountPath: /workspace
+      restartPolicy: OnFailure
+      containers:
+        - name: superset-bootstrap
+          image: apache/superset:3.1.1
+          command: ["/bin/sh", "/app/bootstrap/init_superset.sh"]
+          env:
+            - name: HOME
+              value: /tmp/superset-home
+            - name: PYTHONUSERBASE
+              value: /tmp/superset-python
+            - name: PATH
+              value: /tmp/superset-python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            - name: SUPERSET_SECRET_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: SUPERSET_SECRET_KEY
+            - name: SUPERSET_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: SUPERSET_ADMIN_USERNAME
+            - name: SUPERSET_ADMIN_FIRSTNAME
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: SUPERSET_ADMIN_FIRSTNAME
+            - name: SUPERSET_ADMIN_LASTNAME
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: SUPERSET_ADMIN_LASTNAME
+            - name: SUPERSET_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: SUPERSET_ADMIN_EMAIL
+            - name: SUPERSET_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: SUPERSET_ADMIN_PASSWORD
+            - name: PYTHONPATH
+              value: /app/pythonpath
+            - name: SUPERSET_CONFIG_PATH
+              value: /app/pythonpath/superset_config.py
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
+          volumeMounts:
+            - name: superset-home
+              mountPath: /app/superset_home
+            - name: repo-source
+              mountPath: /app/pythonpath/superset_config.py
+              subPath: config/superset/superset_config.py
+            - name: repo-source
+              mountPath: /app/bootstrap
+              subPath: config/superset/bootstrap
+            - name: repo-source
+              mountPath: /app/bi
+              subPath: bi
+      volumes:
+        - name: superset-home
+          persistentVolumeClaim:
+            claimName: superset-home
+        - name: repo-source
+          emptyDir: {}
+---

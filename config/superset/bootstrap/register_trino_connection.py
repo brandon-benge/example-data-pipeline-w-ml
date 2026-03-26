@@ -4,7 +4,7 @@ from superset.app import create_app
 from superset.extensions import db
 
 
-SQLALCHEMY_URI = "trino://demo@trino:8080/iceberg/gold"
+SQLALCHEMY_URI = "trino://demo@trino.data-platform-serve:8080/iceberg/gold"
 app = create_app()
 
 

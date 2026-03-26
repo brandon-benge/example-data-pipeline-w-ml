@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-TRINO_URL="${TRINO_URL:-http://trino:8080}"
+TRINO_URL="${TRINO_URL:-http://trino.data-platform-serve:8080}"
 TRINO_CATALOG="${TRINO_CATALOG:-iceberg}"
 DDL_PATH="${DDL_PATH:-/config/iceberg/bootstrap-cdc-rest-catalog.sql}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-60}"

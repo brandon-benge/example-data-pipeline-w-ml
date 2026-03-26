@@ -202,10 +202,14 @@ class PostgresWriter:
                     rows = bundle.get(table_name, [])
                     if not rows:
                         counts[table_name] = 0
+                        print(f"[postgres] skipping {table_name}: 0 rows", flush=True)
                         continue
+                    print(f"[postgres] writing {table_name}: {len(rows)} rows", flush=True)
                     cursor.executemany(UPSERT_STATEMENTS[table_name], rows)
                     counts[table_name] = len(rows)
+                    print(f"[postgres] finished {table_name}", flush=True)
             connection.commit()
+        print("[postgres] commit complete", flush=True)
         return counts
 
 

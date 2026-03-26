@@ -3,6 +3,71 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+LEGACY_K8S_NAMESPACE = "data-platform"
+WORKLOAD_NAMESPACES: dict[str, str] = {
+    "infra": "data-platform-infra",
+    "ingest": "data-platform-ingest",
+    "process": "data-platform-process",
+    "serve": "data-platform-serve",
+    "govern": "data-platform-govern",
+}
+
+SERVICE_NAMESPACE_GROUP: dict[str, str] = {
+    "postgres": "infra",
+    "kafka": "infra",
+    "kafka-bootstrap": "infra",
+    "schema-registry": "infra",
+    "schema-registry-bootstrap": "infra",
+    "minio": "infra",
+    "minio-bootstrap": "infra",
+    "iceberg-rest": "infra",
+    "iceberg-cdc-bootstrap": "infra",
+    "generator": "ingest",
+    "kafka-connect-source": "ingest",
+    "kafka-connect-source-bootstrap": "ingest",
+    "kafka-connect-sinks": "ingest",
+    "kafka-connect-sinks-bootstrap": "ingest",
+    "flink-jobmanager": "process",
+    "flink-taskmanager": "process",
+    "flink-bootstrap-bronze-events": "process",
+    "spark": "process",
+    "spark-bootstrap": "process",
+    "dbt": "process",
+    "dbt-scheduler": "process",
+    "trino": "serve",
+    "superset": "serve",
+    "superset-bootstrap": "serve",
+    "metadata": "govern",
+}
+
+SERVICE_RESOURCE_KIND: dict[str, str] = {
+    "postgres": "statefulset",
+    "kafka": "statefulset",
+    "kafka-bootstrap": "job",
+    "schema-registry": "deployment",
+    "schema-registry-bootstrap": "job",
+    "kafka-connect-source": "deployment",
+    "kafka-connect-source-bootstrap": "job",
+    "minio": "statefulset",
+    "minio-bootstrap": "job",
+    "iceberg-rest": "deployment",
+    "trino": "deployment",
+    "iceberg-cdc-bootstrap": "job",
+    "kafka-connect-sinks": "deployment",
+    "kafka-connect-sinks-bootstrap": "job",
+    "flink-jobmanager": "deployment",
+    "flink-taskmanager": "deployment",
+    "flink-bootstrap-bronze-events": "job",
+    "spark": "deployment",
+    "spark-bootstrap": "deployment",
+    "dbt": "deployment",
+    "dbt-scheduler": "deployment",
+    "metadata": "deployment",
+    "superset": "deployment",
+    "superset-bootstrap": "job",
+}
+
+
 @dataclass(frozen=True)
 class StackDefinition:
     name: str
@@ -46,7 +111,7 @@ STACKS: dict[str, StackDefinition] = {
     ),
     "stream-processing": StackDefinition(
         name="stream-processing",
-        description="Kafka-to-Bronze and online feature processing with sink connectors, Flink, Redis, and Iceberg.",
+        description="Kafka-to-Bronze processing with sink connectors, Flink, and Iceberg.",
         services=(
             "postgres",
             "kafka",
@@ -59,16 +124,12 @@ STACKS: dict[str, StackDefinition] = {
             "minio-bootstrap",
             "iceberg-rest",
             "iceberg-cdc-bootstrap",
-            "redis",
-            "flink-python-bootstrap",
-            "flink-jars-bootstrap",
             "flink-jobmanager",
             "flink-taskmanager",
             "flink-bootstrap-bronze-events",
-            "flink-bootstrap-online-features",
             "trino",
         ),
-        validation_sections=("services", "http", "connect", "kafka", "flink", "redis", "generator", "trino"),
+        validation_sections=("services", "http", "connect", "kafka", "flink", "generator", "trino"),
         validation_services=(
             "postgres",
             "kafka",
@@ -78,7 +139,6 @@ STACKS: dict[str, StackDefinition] = {
             "iceberg-rest",
             "flink-jobmanager",
             "flink-taskmanager",
-            "redis",
             "trino",
         ),
         validation_http_endpoints=("schema_registry", "kafka_connect_sinks", "minio", "iceberg_rest", "flink", "trino"),
@@ -106,7 +166,7 @@ STACKS: dict[str, StackDefinition] = {
     ),
     "streaming": StackDefinition(
         name="streaming",
-        description="Combined ingestion plus stream-processing flow from source systems into Bronze and Redis.",
+        description="Combined ingestion plus stream-processing flow from source systems into Bronze.",
         services=(
             "postgres",
             "kafka",
@@ -121,16 +181,12 @@ STACKS: dict[str, StackDefinition] = {
             "minio-bootstrap",
             "iceberg-rest",
             "iceberg-cdc-bootstrap",
-            "redis",
-            "flink-python-bootstrap",
-            "flink-jars-bootstrap",
             "flink-jobmanager",
             "flink-taskmanager",
             "flink-bootstrap-bronze-events",
-            "flink-bootstrap-online-features",
             "trino",
         ),
-        validation_sections=("services", "http", "connect", "kafka", "flink", "postgres", "redis", "generator", "trino"),
+        validation_sections=("services", "http", "connect", "kafka", "flink", "postgres", "generator", "trino"),
         validation_services=(
             "postgres",
             "kafka",
@@ -141,7 +197,6 @@ STACKS: dict[str, StackDefinition] = {
             "iceberg-rest",
             "flink-jobmanager",
             "flink-taskmanager",
-            "redis",
             "trino",
         ),
         validation_http_endpoints=("schema_registry", "kafka_connect_source", "kafka_connect_sinks", "minio", "iceberg_rest", "flink", "trino"),
@@ -177,7 +232,6 @@ STACKS: dict[str, StackDefinition] = {
             "minio",
             "minio-bootstrap",
             "iceberg-rest",
-            "spark-jars-bootstrap",
             "spark",
             "spark-bootstrap",
             "dbt",
@@ -244,31 +298,6 @@ STACKS: dict[str, StackDefinition] = {
             "metadata",
         ),
     ),
-    "ml": StackDefinition(
-        name="ml",
-        description="ML training, registry, and demo scoring over Trino, Redis, Iceberg, MinIO, and metadata.",
-        services=(
-            "postgres",
-            "minio",
-            "minio-bootstrap",
-            "iceberg-rest",
-            "trino",
-            "redis",
-            "ml-training",
-            "ml-inference",
-            "metadata",
-        ),
-        validation_sections=("services", "http", "metadata", "ml"),
-        validation_services=("postgres", "minio", "iceberg-rest", "trino", "redis", "ml-inference", "metadata"),
-        validation_http_endpoints=("minio", "iceberg_rest", "trino", "ml_inference", "metadata"),
-        stop_preserve_services=(
-            "postgres",
-            "minio",
-            "iceberg-rest",
-            "trino",
-            "metadata",
-        ),
-    ),
 }
 
 
@@ -280,11 +309,9 @@ DEFAULT_VALIDATION_SECTIONS: tuple[str, ...] = (
     "flink",
     "postgres",
     "trino",
-    "redis",
     "metadata",
     "dbt",
     "generator",
-    "ml",
 )
 
 
@@ -300,11 +327,9 @@ DEFAULT_VALIDATION_SERVICES: tuple[str, ...] = (
     "flink-taskmanager",
     "spark",
     "spark-bootstrap",
-    "redis",
     "trino",
     "dbt",
     "metadata",
-    "ml-inference",
     "superset",
 )
 
@@ -319,6 +344,19 @@ DEFAULT_VALIDATION_HTTP_ENDPOINTS: tuple[str, ...] = (
     "superset",
     "flink",
     "metadata",
-    "ml_inference",
     "spark_ui",
 )
+
+
+def canonical_namespace_for_service(service: str) -> str:
+    group = SERVICE_NAMESPACE_GROUP.get(service)
+    if group is None:
+        return LEGACY_K8S_NAMESPACE
+    return WORKLOAD_NAMESPACES[group]
+
+
+def namespace_candidates_for_service(service: str) -> tuple[str, ...]:
+    canonical = canonical_namespace_for_service(service)
+    if canonical == LEGACY_K8S_NAMESPACE:
+        return (LEGACY_K8S_NAMESPACE,)
+    return (canonical, LEGACY_K8S_NAMESPACE)

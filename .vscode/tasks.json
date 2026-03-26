@@ -2,34 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "pipeline: run to ingestion",
-      "type": "shell",
-      "command": "bash tools/run_stack_workflow.sh --stop-at ingestion",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "pipeline: run to stream-processing",
-      "type": "shell",
-      "command": "bash tools/run_stack_workflow.sh --stop-at stream-processing",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "pipeline: run to batch",
-      "type": "shell",
-      "command": "bash tools/run_stack_workflow.sh --stop-at batch",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "pipeline: run to analytics",
+      "label": "Environment: Start Full Platform",
       "type": "shell",
       "command": "bash tools/run_stack_workflow.sh --stop-at analytics",
       "options": {
@@ -38,43 +11,124 @@
       "problemMatcher": []
     },
     {
-      "label": "pipeline: run to ml",
+      "label": "Tests: Full Performance Test",
       "type": "shell",
-      "command": "bash tools/run_stack_workflow.sh --stop-at ml",
+      "command": "${workspaceFolder}/.venv/bin/python3 generator/app.py --config params.yaml --mode both",
       "options": {
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
     },
     {
-      "label": "compose: up -d",
+      "label": "Tests: 1/10 Performance Test",
       "type": "shell",
-      "command": "docker compose up -d",
+      "command": "${workspaceFolder}/.venv/bin/python3 generator/app.py --config params.yaml --mode both --allow-small-source-tables --customers 10000 --events-per-minute 10000 --orders-per-hour 5000",
       "options": {
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
     },
     {
-      "label": "compose: down",
+      "label": "Environment: Destroy Everything And Delete PVCs",
       "type": "shell",
-      "command": "docker compose down",
+      "command": "bash tools/run_stack_workflow.sh destroy",
       "options": {
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
     },
     {
-      "label": "compose: down -v",
+      "label": "Environment: Stop Analytics Layer",
       "type": "shell",
-      "command": "docker compose down -v --remove-orphans && docker volume prune -f && bash tools/reset_local_state.sh",
+      "command": "bash tools/run_stack_workflow.sh stop analytics",
       "options": {
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
     },
     {
-      "label": "test: unit",
+      "label": "Environment: Stop Analytics Layer Dependencies",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh stop analytics",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Environment: Show Full Platform Status",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh status analytics",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Environment: Show Full Platform Logs",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh logs analytics",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Environment: Show Streaming Layer Logs",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh logs streaming",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Pipeline: Run Through Ingestion",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh --stop-at ingestion",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Pipeline: Run Through Stream Processing",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh --stop-at stream-processing",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Pipeline: Run Through Batch Processing",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh --stop-at batch",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Pipeline: Run Through Analytics",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh --stop-at analytics",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Pipeline: Run Through Analytics",
+      "type": "shell",
+      "command": "bash tools/run_stack_workflow.sh --stop-at analytics",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Tests: Run Unit Tests",
       "type": "shell",
       "command": "python3 -m unittest discover -s tests/unit -p 'test_*.py'",
       "options": {
@@ -83,7 +137,7 @@
       "problemMatcher": []
     },
     {
-      "label": "test: integration",
+      "label": "Tests: Run Integration Tests",
       "type": "shell",
       "command": "python3 -m unittest discover -s tests/integration -p 'test_*.py'",
       "options": {

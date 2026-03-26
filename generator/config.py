@@ -20,6 +20,7 @@ MIN_SOURCE_TABLE_ROWS = 50_000
 
 @dataclass(frozen=True)
 class GeneratorSettings:
+    enforce_minimums: bool
     customers: int
     events_per_minute: int
     orders_per_hour: int
@@ -80,7 +81,9 @@ def _float_value(source: dict[str, Any], key: str, default: float) -> float:
     return float(value)
 
 
-def _at_least_minimum(count: int) -> int:
+def _at_least_minimum(count: int, *, enforce_minimums: bool) -> int:
+    if not enforce_minimums:
+        return count
     return max(MIN_SOURCE_TABLE_ROWS, count)
 
 
@@ -100,12 +103,19 @@ def _int_value_aliases(
     return default
 
 
+def _has_override(overrides: dict[str, Any], keys: tuple[str, ...]) -> bool:
+    return any(overrides.get(key) is not None for key in keys)
+
+
 def load_settings(config_path: str | Path, overrides: dict[str, Any] | None = None) -> GeneratorSettings:
     raw = _read_yaml(config_path)
     overrides = overrides or {}
+    enforce_minimums = bool(overrides.get("enforce_minimums", True))
 
     customers = _at_least_minimum(
         _int_value_aliases(raw, ("customer_rows", "customers"), 10000, overrides=overrides)
+        ,
+        enforce_minimums=enforce_minimums,
     )
     events_per_minute = _int_value_aliases(
         raw,
@@ -115,40 +125,87 @@ def load_settings(config_path: str | Path, overrides: dict[str, Any] | None = No
     )
     orders_per_hour = _at_least_minimum(
         _int_value_aliases(raw, ("order_header_rows", "orders_per_hour"), 100, overrides=overrides)
+        ,
+        enforce_minimums=enforce_minimums,
     )
 
-    derived_sales_reps = _at_least_minimum(max(4, min(12, max(1, customers // 2000))))
-    derived_advertisers = _at_least_minimum(max(12, min(80, max(1, customers // 250))))
-    derived_products = _at_least_minimum(max(30, min(250, max(1, customers // 120))))
-    derived_campaigns = _at_least_minimum(max(derived_advertisers, min(200, derived_advertisers * 2)))
-    derived_sessions = _at_least_minimum(max(customers // 2, events_per_minute * 3))
-    derived_sales_activities = _at_least_minimum(max(derived_advertisers // 2, orders_per_hour // 4))
+    derived_sales_reps = _at_least_minimum(max(4, min(12, max(1, customers // 2000))), enforce_minimums=enforce_minimums)
+    derived_advertisers = _at_least_minimum(
+        max(12, min(80, max(1, customers // 250))),
+        enforce_minimums=enforce_minimums,
+    )
+    derived_products = _at_least_minimum(
+        max(30, min(250, max(1, customers // 120))),
+        enforce_minimums=enforce_minimums,
+    )
+    derived_campaigns = _at_least_minimum(
+        max(derived_advertisers, min(200, derived_advertisers * 2)),
+        enforce_minimums=enforce_minimums,
+    )
+    derived_sessions = _at_least_minimum(
+        max(customers // 2, events_per_minute * 3),
+        enforce_minimums=enforce_minimums,
+    )
+    derived_sales_activities = _at_least_minimum(
+        max(derived_advertisers // 2, orders_per_hour // 4),
+        enforce_minimums=enforce_minimums,
+    )
 
-    sales_reps = _at_least_minimum(
-        _int_value_aliases(raw, ("sales_rep_rows", "sales_reps"), derived_sales_reps, overrides=overrides)
-    )
-    advertisers = _at_least_minimum(
-        _int_value_aliases(raw, ("advertiser_rows", "advertisers"), derived_advertisers, overrides=overrides)
-    )
-    products = _at_least_minimum(
-        _int_value_aliases(raw, ("product_rows", "products"), derived_products, overrides=overrides)
-    )
-    campaigns = _at_least_minimum(
-        _int_value_aliases(raw, ("campaign_rows", "campaigns"), derived_campaigns, overrides=overrides)
-    )
-    sessions = _at_least_minimum(
-        _int_value_aliases(raw, ("customer_session_rows", "sessions"), derived_sessions, overrides=overrides)
-    )
-    sales_activities = _at_least_minimum(
-        _int_value_aliases(
-            raw,
-            ("sales_activity_rows", "sales_activities"),
-            derived_sales_activities,
-            overrides=overrides,
+    if enforce_minimums or _has_override(overrides, ("sales_rep_rows", "sales_reps")):
+        sales_reps = _at_least_minimum(
+            _int_value_aliases(raw, ("sales_rep_rows", "sales_reps"), derived_sales_reps, overrides=overrides),
+            enforce_minimums=enforce_minimums,
         )
-    )
+    else:
+        sales_reps = derived_sales_reps
+
+    if enforce_minimums or _has_override(overrides, ("advertiser_rows", "advertisers")):
+        advertisers = _at_least_minimum(
+            _int_value_aliases(raw, ("advertiser_rows", "advertisers"), derived_advertisers, overrides=overrides),
+            enforce_minimums=enforce_minimums,
+        )
+    else:
+        advertisers = derived_advertisers
+
+    if enforce_minimums or _has_override(overrides, ("product_rows", "products")):
+        products = _at_least_minimum(
+            _int_value_aliases(raw, ("product_rows", "products"), derived_products, overrides=overrides),
+            enforce_minimums=enforce_minimums,
+        )
+    else:
+        products = derived_products
+
+    if enforce_minimums or _has_override(overrides, ("campaign_rows", "campaigns")):
+        campaigns = _at_least_minimum(
+            _int_value_aliases(raw, ("campaign_rows", "campaigns"), derived_campaigns, overrides=overrides),
+            enforce_minimums=enforce_minimums,
+        )
+    else:
+        campaigns = derived_campaigns
+
+    if enforce_minimums or _has_override(overrides, ("customer_session_rows", "sessions")):
+        sessions = _at_least_minimum(
+            _int_value_aliases(raw, ("customer_session_rows", "sessions"), derived_sessions, overrides=overrides),
+            enforce_minimums=enforce_minimums,
+        )
+    else:
+        sessions = derived_sessions
+
+    if enforce_minimums or _has_override(overrides, ("sales_activity_rows", "sales_activities")):
+        sales_activities = _at_least_minimum(
+            _int_value_aliases(
+                raw,
+                ("sales_activity_rows", "sales_activities"),
+                derived_sales_activities,
+                overrides=overrides,
+            ),
+            enforce_minimums=enforce_minimums,
+        )
+    else:
+        sales_activities = derived_sales_activities
 
     return GeneratorSettings(
+        enforce_minimums=enforce_minimums,
         customers=customers,
         events_per_minute=events_per_minute,
         orders_per_hour=orders_per_hour,

@@ -404,9 +404,16 @@ def main() -> None:
     parser.add_argument("--artifacts-dir", default=str(ARTIFACT_ROOT))
     parser.add_argument("--status", default="candidate")
     parser.add_argument("--no-publish-artifacts", action="store_true")
+    parser.add_argument("--skip-empty", action="store_true")
     args = parser.parse_args()
 
-    rows = build_feature_rows(args.feature_group, table_name=args.table_name)
+    try:
+        rows = build_feature_rows(args.feature_group, table_name=args.table_name)
+    except ValueError as exc:
+        if args.skip_empty and "No feature rows found" in str(exc):
+            print(str(exc))
+            return
+        raise
     result = train_from_rows(
         rows,
         args.feature_group,

@@ -1,10 +1,10 @@
-# Example Data Pipeline with ML
+# Example Data Pipeline
 
 Architecture overview:
 
 ![Platform Architecture](./docs/image.png)
 
-This repository demonstrates how a modern data platform can support real-time ML decisions using streaming pipelines, a lakehouse architecture, and an inference service.
+This repository demonstrates a modern data platform built around streaming ingestion, lakehouse storage, governed batch transformation, and BI consumption.
 
 Blog walkthrough:
 
@@ -14,54 +14,51 @@ https://github.com/brandon-benge/example-data-pipeline-w-ml/blob/main/docs/blog.
 Detailed architecture specification:
 
 See the full architecture definition here:
-https://github.com/brandon-benge/example-data-pipeline-w-ml/blob/main/ARCHITECTURE.md
+https://github.com/brandon-benge/example-data-pipeline-w-ml/blob/main/SpecRepo/ARCHITECTURE.md
 
 ## Platform Overview
 
-This repository contains a local laptop-scale end-to-end platform that demonstrates how streaming, batch processing, analytics, and ML inference systems can work together to produce real operational decisions.
+This repository contains a local laptop-scale end-to-end platform for ingestion, Bronze and Silver processing, Gold analytics, and governed metadata.
 
 Key components include:
 
 - Postgres source tables with Debezium CDC into Kafka
 - direct behavioral events on `events.session_event` with Schema Registry
-- Bronze ingestion and online Redis feature serving in Flink
-- Silver, governance, and offline feature parity logic in Spark
+- Bronze ingestion in Flink
+- Silver and governance logic in Spark
 - Gold dimensions, facts, marts, and semantic views in dbt
 - Trino and Superset for curated BI access
-- local ML training code that publishes artifacts to MinIO-backed object storage plus a containerized inference service that reads governed features and serves request-time predictions
+- published offline feature datasets consumed by the ML platform repo [`example-model-routing`](https://github.com/brandon-benge/example-model-routing)
 
 ## Architecture Layers
 
 - Ingestion: Postgres, Debezium, Kafka Connect, Kafka, Schema Registry
-- Stream Processing: Kafka Connect Iceberg sinks, Flink, Redis
+- Stream Processing: Kafka Connect Iceberg sinks, Flink
 - Lakehouse: Apache Iceberg, Iceberg REST Catalog, MinIO
 - Batch Processing: Spark, dbt
 - Analytics: Trino, Apache Superset
-- ML: scikit-learn, MinIO, FastAPI, Redis
 
 ## Setup
 
 Prerequisites:
 
-- Docker and Docker Compose
+- `kubectl` configured for your DigitalOcean Kubernetes cluster
 - Python 3.11+ for the synthetic generator and local tests
 
 ## Startup
 
-There are two ways to run the local platform:
+The repo now runs on Kubernetes instead of `docker compose`.
 
-Recommended for normal local use:
-
-- use the staged wrapper flow in [Demo Workflow](./docs/runbooks/demo_workflow.md)
-- the wrapper starts the platform in phases, validates each stage, and monitors data as it moves through the system
-
-Full-stack option:
+Primary deployment path:
 
 ```bash
-docker compose up -d
+kubectl apply -f k8s/platform.yaml
 ```
 
-This brings up the whole platform at once, but it is heavy for a laptop and can consume substantial CPU and memory.
+Recommended operator flow:
+
+- use the staged wrapper flow in [Demo Workflow](./docs/runbooks/demo_workflow.md)
+- the wrapper applies the Kubernetes platform once, then validates each logical stage against the cluster
 
 The staged workflow is usually the better local experience:
 
@@ -70,23 +67,15 @@ bash tools/run_stack_workflow.sh --stop-at ingestion
 bash tools/run_stack_workflow.sh --stop-at stream-processing
 bash tools/run_stack_workflow.sh --stop-at batch
 bash tools/run_stack_workflow.sh --stop-at analytics
-bash tools/run_stack_workflow.sh --stop-at ml
 ```
 
-If you do use `docker compose up -d`, Kafka topic creation, Schema Registry subject registration, Debezium source registration, Iceberg sink registration, MinIO/Iceberg bootstrap, Trino, and Superset initialization all happen through Compose-managed services.
-Flink streaming job submission and Spark batch job execution are also started through Compose-managed services.
-The REST-catalog namespaces and Bronze CDC table DDL are also initialized by a dedicated one-shot bootstrap service before the per-table Kafka Connect Iceberg sinks are registered. The Debezium source connector and the Iceberg sink connectors run on separate Kafka Connect workers in local mode.
+The Kubernetes manifest preserves the same demo topology:
+
+- bootstrap tasks run as Kubernetes `Job` resources
+- long-running services run as `Deployment` or `StatefulSet` resources
+- the Debezium source connector and the Iceberg sink connectors still run on separate Kafka Connect workers
 
 For local simplicity, the Iceberg REST catalog now uses the existing Postgres service as its JDBC metadata backend. That shared database is a demo shortcut. In a more realistic deployment, source application tables, Iceberg catalog metadata, Superset metadata, and any other control-plane state should live in separate databases.
-
-For backend A/B testing, you can override the Iceberg REST catalog JDBC URI before recreating dependent services:
-
-```bash
-export ICEBERG_CATALOG_URI='jdbc:sqlite:/tmp/iceberg_rest_mode.db'
-docker compose up -d --force-recreate iceberg-rest trino kafka-connect-sinks kafka-connect-sinks-bootstrap
-```
-
-Unset `ICEBERG_CATALOG_URI` to return to the default Postgres-backed catalog.
 
 ## Synthetic data generation
 
@@ -101,65 +90,78 @@ That seeds:
 - mutable business tables in Postgres for CDC capture
 - `events.session_event` behavioral events in Kafka
 
-The staged wrapper in [Demo Workflow](./docs/runbooks/demo_workflow.md) runs this generation step at the right point in the flow and then validates downstream stages as data lands in Bronze, Silver, Gold, Redis, and the ML serving path.
+The staged wrapper in [Demo Workflow](./docs/runbooks/demo_workflow.md) runs this generation step at the right point in the flow and then validates downstream stages as data lands in Bronze, Silver, and Gold.
 
 ## Architecture-aligned workflow
 
 1. Prefer the staged wrapper flow in [Demo Workflow](./docs/runbooks/demo_workflow.md) over bringing up the whole stack at once.
-2. The wrapper starts ingestion, stream-processing, batch, analytics, and ML in order.
-3. It runs validation after each stage so you can see when data has actually moved into Bronze, Silver, Gold, Redis, and the model registry.
-4. The ML stage ends with inference checks against the API, including `curl` examples for customer, campaign, and advertiser scoring.
+2. The wrapper starts ingestion, stream-processing, batch, and analytics in order.
+3. It runs validation after each stage so you can see when data has actually moved into Bronze, Silver, and Gold.
 
-## Example ML Decisions
+## ML Split
 
-The platform demonstrates three operational ML decision patterns:
+ML training, model storage and registry behavior, hot feature serving, and model hosting have been moved to [`example-model-routing`](https://github.com/brandon-benge/example-model-routing).
 
-- **Customer purchase propensity** – predicts likelihood of a near-term purchase
-- **Campaign success propensity** – predicts whether a campaign will perform well
-- **Advertiser budget expansion** – predicts likelihood of increased advertising spend
+That external repo now owns:
 
-These predictions are exposed through the containerized inference service.
+- model training
+- model storage and registry workflows
+- hot Redis-backed feature serving
+- inference and model hosting
+- experimentation and rollout logic
 
-The practical way to exercise them is documented in [Demo Workflow](./docs/runbooks/demo_workflow.md), including the `curl` commands for:
+The current repo remains responsible for:
 
-- `POST /score/customer_purchase`
-- `POST /score/campaign_success`
-- `POST /score/advertiser_budget_expansion`
+- governed source ingestion and replayable Bronze history
+- deterministic Silver datasets
+- Gold analytics models and published offline feature datasets
+- metadata, ownership, lineage, and BI access
 
-Training remains lightweight and local-demo-friendly:
-
-- training features are assembled from Silver-derived feature tables
-- local training artifacts are written under [ml/artifacts/](./ml/artifacts)
-- canonical artifact copies are published to MinIO
-- model metadata is recorded in `iceberg.silver.ml_model_registry`
-- runtime inference resolves the latest manifest from the registry and downloads the model from MinIO in memory at request time
+See [ML Platform Split](./docs/ml_platform_split.md) for the move plan and the list of assets that should leave this repo.
 
 ## Key paths
 
-- platform config: [docker-compose.yml](./docker-compose.yml)
+- platform config: [k8s/platform.yaml](./k8s/platform.yaml)
 - source generator: [generator/](./generator)
 - Flink jobs: [flink/jobs](./flink/jobs)
 - Spark jobs: [spark/jobs](./spark/jobs)
 - dbt Gold project: [dbt/](./dbt)
 - BI assets: [bi/](./bi)
-- ML code and artifacts: [ml/](./ml)
 - governance and metadata: [config/governance](./config/governance), [metadata/](./metadata)
 - runbooks: [docs/runbooks](./docs/runbooks)
 
 ## BI and access
 
-- Trino: `http://localhost:8080`
-- Superset: `http://localhost:8088`
-- Schema Registry: `http://localhost:8081`
-- metadata HTTP server: `http://localhost:9002`
-- ML inference API: `http://localhost:8010`
+Use Kubernetes port-forwarding from your workstation for the supported local interfaces. Do not assume other host ports are available.
 
-The inference surface exposes separate use-case endpoints:
-- `POST /score/customer_purchase`
-- `POST /score/campaign_success`
-- `POST /score/advertiser_budget_expansion`
+When you use `bash tools/run_stack_workflow.sh --stop-at <stage>`, the workflow establishes these workstation port-forwards automatically after the platform is applied. Run them manually only when you are not using the staged workflow.
 
-Superset is bootstrapped during `docker compose up` and creates a Trino connection using the local pattern `trino://trino:8080/iceberg`, defaulting BI assets to the curated `gold` schema.
+Primary interfaces:
+
+```bash
+kubectl -n data-platform-serve port-forward svc/trino 8080:8080
+kubectl -n data-platform-process port-forward svc/flink-jobmanager 8082:8081
+kubectl -n data-platform-serve port-forward svc/superset 8088:8088
+```
+
+Optional debugging endpoints:
+
+```bash
+kubectl -n data-platform-infra port-forward svc/schema-registry 8081:8081
+kubectl -n data-platform-govern port-forward svc/metadata 9002:9002
+```
+
+Generator access from your workstation:
+
+```bash
+kubectl -n data-platform-infra port-forward svc/postgres 5432:5432
+kubectl -n data-platform-infra port-forward svc/kafka 19092:19092
+kubectl -n data-platform-infra port-forward svc/schema-registry 8081:8081
+```
+
+Run those in separate terminals only when you seed data manually from the host without `tools/run_stack_workflow.sh`.
+
+Superset is bootstrapped through a Kubernetes job and creates a Trino connection using the cluster-local pattern `trino://trino.data-platform-serve:8080/iceberg`, defaulting BI assets to the curated `gold` schema.
 
 ## Tests
 
@@ -184,11 +186,41 @@ Governance and quality docs:
 ## Reference Material
 
 - [Architecture Blog](./docs/blog.md)
-- [Architecture](./ARCHITECTURE.md)
+- [Architecture](./SpecRepo/ARCHITECTURE.md)
 - [Architecture Rationale](./docs/architecture_rationale.md)
-- [Real-Time Scoring Use Case](./docs/realtime_scoring_use_case.md)
+- [ML Platform Split](./docs/ml_platform_split.md)
 
-## Author
+# Templates
+
+This folder contains the reusable `SpecRepo` template set.
+
+Use these files when you want a working starting point for a repository-based specification system.
+
+## Template Set
+
+- [SpecRepo README](./SpecRepo/README.md)
+- [PROBLEM.md](./SpecRepo/PROBLEM.md)
+- [INVARIANTS.md](./SpecRepo/INVARIANTS.md)
+- [REQUIREMENTS.md](./SpecRepo/REQUIREMENTS.md)
+- [DATA_MODEL.md](./SpecRepo/DATA_MODEL.md)
+- [CONSISTENCY.md](./SpecRepo/CONSISTENCY.md)
+- [ARCHITECTURE.md](./SpecRepo/ARCHITECTURE.md)
+- [FAILURE_MODES.md](./SpecRepo/FAILURE_MODES.md)
+- [SCALING.md](./SpecRepo/SCALING.md)
+- [OBSERVABILITY.md](./SpecRepo/OBSERVABILITY.md)
+- [SECURITY.md](./SpecRepo/SECURITY.md)
+- [TEST_PLAN.md](./SpecRepo/TEST_PLAN.md)
+- [API_CONTRACTS.yaml](./SpecRepo/API_CONTRACTS.yaml)
+- [CHANGELOG.md](./SpecRepo/CHANGELOG.md)
+
+## How To Use
+
+1. Start with the required files.
+2. Add optional files when the system matures.
+3. Treat the templates as a baseline, not as immutable law.
+4. Keep the files specific enough that humans and artificial intelligence can both act from them.
+
+# Author
 
 Brandon Benge  
 LinkedIn: https://www.linkedin.com/in/brandon-benge-3b57a547/

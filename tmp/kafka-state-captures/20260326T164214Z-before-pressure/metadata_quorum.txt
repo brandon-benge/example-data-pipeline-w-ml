@@ -1,9 +1,0 @@
-$ kubectl -n data-platform-infra exec statefulset/kafka -c kafka -- sh -lc '/opt/kafka/bin/kafka-metadata-quorum.sh --bootstrap-server kafka:9092 describe --status'
-ClusterId:              4L6g3nShT-eMCtK--X86sw
-LeaderId:               1
-LeaderEpoch:            1
-HighWatermark:          204
-MaxFollowerLag:         0
-MaxFollowerLagTimeMs:   0
-CurrentVoters:          [{"id": 1, "endpoints": ["CONTROLLER://kafka-0.kafka-headless.data-platform-infra.svc.cluster.local:9093"]}]
-CurrentObservers:       []

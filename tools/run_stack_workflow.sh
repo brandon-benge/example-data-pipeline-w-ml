@@ -117,16 +117,52 @@ wait_for_job_completion() {
   local namespace="$1"
   local job_name="$2"
   local timeout="${3:-300s}"
+  local progress_pid=""
 
   echo
   echo "==> Waiting for job/${job_name} in ${namespace}"
+  if [[ "$namespace" == "data-platform-infra" && "$job_name" == "kafka-bootstrap" ]]; then
+    stream_job_logs_until_completion "$namespace" "$job_name" &
+    progress_pid=$!
+  fi
+
   if kubectl -n "$namespace" wait --for=condition=complete "job/${job_name}" --timeout="$timeout"; then
+    if [[ -n "$progress_pid" ]]; then
+      wait "$progress_pid" >/dev/null 2>&1 || true
+    fi
     return 0
+  fi
+
+  if [[ -n "$progress_pid" ]]; then
+    kill "$progress_pid" >/dev/null 2>&1 || true
+    wait "$progress_pid" >/dev/null 2>&1 || true
   fi
 
   echo "job/${job_name} did not complete in time. Recent logs:" >&2
   kubectl -n "$namespace" logs "job/${job_name}" --tail=120 >&2 || true
   return 1
+}
+
+stream_job_logs_until_completion() {
+  local namespace="$1"
+  local job_name="$2"
+  local log_started=0
+
+  while true; do
+    if kubectl -n "$namespace" logs -f "job/${job_name}" 2>/dev/null; then
+      return 0
+    fi
+
+    if kubectl -n "$namespace" get "job/${job_name}" -o jsonpath='{.status.completionTime}' 2>/dev/null | grep -q '.'; then
+      return 0
+    fi
+
+    if [[ "$log_started" -eq 0 ]]; then
+      echo "   Streaming kafka-bootstrap progress as topics are reconciled..."
+      log_started=1
+    fi
+    sleep 2
+  done
 }
 
 get_first_pod_creation_timestamp() {

@@ -1,9 +1,9 @@
 jobmanager.rpc.address: flink-jobmanager
 jobmanager.memory.process.size: 2048m
-# Laptop profile: prefer one larger taskmanager over two smaller ones.
-taskmanager.memory.process.size: 6144m
-taskmanager.numberOfTaskSlots: 5
-parallelism.default: 4
+# Small-cluster profile: keep the job runnable on a 3-node dev cluster.
+taskmanager.memory.process.size: 3072m
+taskmanager.numberOfTaskSlots: 2
+parallelism.default: 1
 rest.port: 8081
 io.tmp.dirs: /tmp/flink-tmp
 taskmanager.tmp.dirs: /tmp/flink-tmp

@@ -1,3 +1,0 @@
-$ kubectl -n data-platform-infra get pod kafka-0 -o wide
-NAME      READY   STATUS    RESTARTS   AGE   IP              NODE                           NOMINATED NODE   READINESS GATES
-kafka-0   1/1     Running   0          54s   10.108.11.146   basic-compute-nodepool-day90   <none>           <none>

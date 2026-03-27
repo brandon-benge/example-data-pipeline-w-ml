@@ -941,7 +941,7 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 128Mi
             limits:
               cpu: 500m
               memory: 512Mi
@@ -1150,7 +1150,7 @@ spec:
             - name: AWS_DEFAULT_REGION
               value: us-east-1
             - name: KAFKA_HEAP_OPTS
-              value: -Xms256M -Xmx1G
+              value: -Xms256M -Xmx512M
             - name: REST_HOST_NAME
               value: kafka-connect-source
             - name: ADVERTISED_HOST_NAME
@@ -1159,8 +1159,8 @@ spec:
               value: /kafka/connect
           resources:
             requests:
-              cpu: 500m
-              memory: 1Gi
+              cpu: 250m
+              memory: 512Mi
             limits:
               cpu: "1"
               memory: 2Gi
@@ -1284,8 +1284,8 @@ spec:
                   key: MINIO_ROOT_PASSWORD
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 100m
+              memory: 128Mi
             limits:
               cpu: "1"
               memory: 1Gi
@@ -1572,8 +1572,8 @@ spec:
           command: ["/bin/sh", "/config/iceberg/bootstrap-cdc-rest-catalog.sh"]
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 100m
+              memory: 128Mi
             limits:
               cpu: "1"
               memory: 1Gi
@@ -1692,7 +1692,7 @@ spec:
             - name: AWS_DEFAULT_REGION
               value: us-east-1
             - name: KAFKA_HEAP_OPTS
-              value: -Xms256M -Xmx1G
+              value: -Xms256M -Xmx512M
             - name: REST_HOST_NAME
               value: kafka-connect-sinks
             - name: ADVERTISED_HOST_NAME
@@ -1701,8 +1701,8 @@ spec:
               value: /kafka/connect
           resources:
             requests:
-              cpu: 500m
-              memory: 1Gi
+              cpu: 250m
+              memory: 512Mi
             limits:
               cpu: "2"
               memory: 2Gi
@@ -2100,8 +2100,8 @@ spec:
             - python -m pip install --no-cache-dir --target /deps apache-beam==2.54.0 grpcio avro-python3 async-timeout -r /workspace/flink/requirements.txt
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 100m
+              memory: 128Mi
             limits:
               cpu: 500m
               memory: 1Gi
@@ -2135,11 +2135,11 @@ spec:
               value: file:///opt/flink/opt/flink-python-1.20.3.jar;file:///opt/flink/usrlib/repo/flink/jars/iceberg-flink-runtime-1.20-1.10.1.jar;file:///opt/flink/usrlib/repo/flink/jars/flink-sql-connector-kafka-3.3.0-1.20.jar;file:///opt/flink/usrlib/repo/flink/jars/hadoop-client-api-3.4.1.jar;file:///opt/flink/usrlib/repo/flink/jars/hadoop-client-runtime-3.4.1.jar;file:///opt/flink/usrlib/repo/flink/jars/iceberg-aws-bundle-1.10.1.jar
           resources:
             requests:
-              cpu: "2"
-              memory: 4608Mi
+              cpu: "1"
+              memory: 2560Mi
             limits:
-              cpu: "3"
-              memory: 7Gi
+              cpu: "2"
+              memory: 4Gi
           volumeMounts:
             - name: repo-source
               mountPath: /opt/flink/usrlib/repo
@@ -2271,17 +2271,17 @@ spec:
             - name: AWS_DEFAULT_REGION
               value: us-east-1
             - name: FLINK_PARALLELISM
-              value: "4"
+              value: "1"
             - name: FLINK_JOB_PARALLELISM
-              value: "4"
+              value: "1"
             - name: PYTHONPATH
               value: /opt/flink/usrlib/repo/flink:/opt/flink/opt/python/pyflink_pkg:/opt/flink/opt/python/py4j-0.10.9.7-src.zip:/opt/flink/usrlib/repo:/opt/flink/usrlib/repo/flink/.deps
             - name: FLINK_PIPELINE_JARS
               value: file:///opt/flink/opt/flink-python-1.20.3.jar;file:///opt/flink/usrlib/repo/flink/jars/iceberg-flink-runtime-1.20-1.10.1.jar;file:///opt/flink/usrlib/repo/flink/jars/flink-sql-connector-kafka-3.3.0-1.20.jar;file:///opt/flink/usrlib/repo/flink/jars/hadoop-client-api-3.4.1.jar;file:///opt/flink/usrlib/repo/flink/jars/hadoop-client-runtime-3.4.1.jar;file:///opt/flink/usrlib/repo/flink/jars/iceberg-aws-bundle-1.10.1.jar
           resources:
             requests:
-              cpu: "1"
-              memory: 1536Mi
+              cpu: 100m
+              memory: 128Mi
             limits:
               cpu: "2"
               memory: 3Gi
@@ -2512,8 +2512,8 @@ spec:
               value: "20"
           resources:
             requests:
-              cpu: 500m
-              memory: 768Mi
+              cpu: 100m
+              memory: 128Mi
             limits:
               cpu: "1"
               memory: 1536Mi
@@ -3062,7 +3062,7 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 128Mi
             limits:
               cpu: 500m
               memory: 768Mi

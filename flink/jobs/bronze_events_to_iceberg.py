@@ -21,6 +21,7 @@ def main() -> None:
     table_env = build_table_environment("bronze-events-to-iceberg")
     register_iceberg_catalog(table_env)
     execute_sql_file(table_env, EVENT_ICEBERG_DDL_PATH)
+    enable_schema_dlq = env("ENABLE_SESSION_EVENT_SCHEMA_DLQ", "false").lower() == "true"
 
     create_raw_kafka_source_table(
         table_env,
@@ -28,11 +29,12 @@ def main() -> None:
         topic="events.session_event",
         group_id="bronze-session-event",
     )
-    create_json_kafka_sink(
-        table_env,
-        table_name="session_event_schema_dlq",
-        topic="dlq.events.session_event_schema",
-    )
+    if enable_schema_dlq:
+        create_json_kafka_sink(
+            table_env,
+            table_name="session_event_schema_dlq",
+            topic="dlq.events.session_event_schema",
+        )
 
     decoder = udf(
         lambda payload: session_event_extract(payload, env("SCHEMA_REGISTRY_URL", "http://schema-registry.data-platform-infra:8081")),
@@ -79,24 +81,25 @@ def main() -> None:
         WHERE JSON_VALUE(decoded_json, '$.error') IS NULL
         """
     )
-    statement_set.add_insert_sql(
-        """
-        INSERT INTO session_event_schema_dlq
-        SELECT
-            CONCAT('events.session_event-', CAST(source_partition AS STRING), '-', CAST(source_offset AS STRING)) AS dlq_key,
-            CAST(JSON_VALUE(decoded_json, '$.raw_payload') AS STRING) AS raw_payload,
-            'events.session_event' AS original_topic,
-            source_partition,
-            source_offset,
-            CAST(JSON_VALUE(decoded_json, '$.schema_subject') AS STRING) AS schema_subject,
-            CAST(JSON_VALUE(decoded_json, '$.schema_id') AS INT) AS schema_id,
-            CAST(JSON_VALUE(decoded_json, '$.error') AS STRING) AS failure_reason,
-            kafka_timestamp,
-            CURRENT_TIMESTAMP AS dlq_emitted_ts
-        FROM decoded_session_event
-        WHERE JSON_VALUE(decoded_json, '$.error') IS NOT NULL
-        """
-    )
+    if enable_schema_dlq:
+        statement_set.add_insert_sql(
+            """
+            INSERT INTO session_event_schema_dlq
+            SELECT
+                CONCAT('events.session_event-', CAST(source_partition AS STRING), '-', CAST(source_offset AS STRING)) AS dlq_key,
+                CAST(JSON_VALUE(decoded_json, '$.raw_payload') AS STRING) AS raw_payload,
+                'events.session_event' AS original_topic,
+                source_partition,
+                source_offset,
+                CAST(JSON_VALUE(decoded_json, '$.schema_subject') AS STRING) AS schema_subject,
+                CAST(JSON_VALUE(decoded_json, '$.schema_id') AS INT) AS schema_id,
+                CAST(JSON_VALUE(decoded_json, '$.error') AS STRING) AS failure_reason,
+                kafka_timestamp,
+                CURRENT_TIMESTAMP AS dlq_emitted_ts
+            FROM decoded_session_event
+            WHERE JSON_VALUE(decoded_json, '$.error') IS NOT NULL
+            """
+        )
     statement_set.execute().wait()
 
 

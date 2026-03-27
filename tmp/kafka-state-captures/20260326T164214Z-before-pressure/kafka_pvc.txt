@@ -1,3 +1,0 @@
-$ kubectl -n data-platform-infra get pvc kafka-data -o wide
-NAME         STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS       VOLUMEATTRIBUTESCLASS   AGE    VOLUMEMODE
-kafka-data   Bound    pvc-51c8702b-43c3-43b7-8dd5-9714d0e0e3b6   50Gi       RWO            do-block-storage   <unset>                 117m   Filesystem

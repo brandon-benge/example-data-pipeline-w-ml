@@ -8,12 +8,36 @@ from pathlib import Path
 from typing import Any
 
 
-DBT_ROOT = Path(os.getenv("DBT_METADATA_DBT_ROOT", "/usr/app"))
+DBT_ROOT = Path(os.getenv("DBT_METADATA_DBT_ROOT", "/app/dbt"))
 METADATA_ROOT = Path(os.getenv("DBT_METADATA_ROOT", "/app/metadata"))
 
 
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _candidate_target_roots() -> list[Path]:
+    candidates: list[Path] = []
+    target_path = os.getenv("DBT_TARGET_PATH", "target")
+    for root in (
+        DBT_ROOT,
+        Path.cwd(),
+        Path("/app/dbt"),
+        Path("/usr/app"),
+    ):
+        candidate = (root / target_path).resolve()
+        if candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
+def _resolve_target_root() -> Path | None:
+    for candidate in _candidate_target_roots():
+        manifest_path = candidate / "manifest.json"
+        run_results_path = candidate / "run_results.json"
+        if manifest_path.exists() and run_results_path.exists():
+            return candidate
+    return None
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -63,8 +87,16 @@ def _resolve_dataset(unique_id: str, manifest: dict[str, Any]) -> str | None:
 
 
 def export_metadata(chunk_label: str) -> None:
-    manifest = _load_json(DBT_ROOT / "target" / "manifest.json")
-    run_results = _load_json(DBT_ROOT / "target" / "run_results.json")
+    target_root = _resolve_target_root()
+    if target_root is None:
+        print(
+            f"No dbt metadata artifacts found for chunk '{chunk_label}'; skipping metadata export.",
+            file=sys.stderr,
+        )
+        return
+
+    manifest = _load_json(target_root / "manifest.json")
+    run_results = _load_json(target_root / "run_results.json")
     run_id = run_results.get("metadata", {}).get("invocation_id", f"dbt-{chunk_label}")
 
     latest_runs_path = METADATA_ROOT / "lineage" / "latest_runs.json"

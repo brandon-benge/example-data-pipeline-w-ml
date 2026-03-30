@@ -69,7 +69,7 @@ submit_job() {
     -Drest.port=8081 \
     -pyclientexec python3 \
     -pyexec python3 \
-    -pyfs /opt/flink/usrlib/repo,/opt/flink/usrlib/repo/flink/.deps \
+    -pyfs /opt/flink/usrlib/repo \
     -p "$parallelism"
 
   if [ -n "${FLINK_PIPELINE_JARS:-}" ]; then

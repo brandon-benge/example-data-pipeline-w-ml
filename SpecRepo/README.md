@@ -7,7 +7,7 @@ This directory is the canonical replacement for the root `ARCHITECTURE.md`. The 
 
 ## Purpose
 
-The spec makes design, implementation, governance, and validation rules explicit for the laptop-scale retail advertising and commerce data platform. It covers source generation, CDC, streaming, lakehouse storage, BI, governance, ML training, online features, and local deployment expectations.
+The spec makes design, implementation, governance, and validation rules explicit for the laptop-scale retail advertising and commerce data platform. It covers source generation, CDC, streaming, Iceberg storage, BI, governance, ML training, online features, and local deployment expectations.
 
 ## How To Read It
 

@@ -5,7 +5,7 @@ This repo now targets DigitalOcean Kubernetes (`kubectl`) instead of `docker com
 ## Assumptions
 
 - You already have `kubectl` pointed at your DOKS cluster.
-- The branch or tag referenced in [platform.yaml](./platform.yaml) is reachable from the cluster at runtime.
+- You are logged in to the DigitalOcean registry used for the repo bundle image, or your cluster already has pull access to it.
 - This is still the same single-node demo architecture, just packaged as Kubernetes workloads.
 
 ## Images
@@ -14,7 +14,7 @@ All workloads now use upstream/public images directly.
 
 Repo-owned logic is injected at runtime by:
 
-- cloning the repo declared in `platform-config`
+- pulling the packaged repo bundle image and unpacking it into the pod workspace
 - mounting repo files into pods
 - building the Kafka Connect Iceberg plugin in an init container
 - downloading Flink and Spark runtime jars in init containers
@@ -22,12 +22,11 @@ Repo-owned logic is injected at runtime by:
 
 ## Repo Source
 
-The manifest clones the repo at pod startup using:
+The manifest now uses the repo bundle image built by [tools/package_repo.sh](../tools/package_repo.sh) and [tools/push_repo_bundle.sh](../tools/push_repo_bundle.sh). The default image reference currently used by the init containers is:
 
-- `GIT_REPO_URL`
-- `GIT_REPO_REF`
+- `registry.digitalocean.com/registry-k8s-1-35-1-do-1-tor1-1774447535918/repo-bundle:latest`
 
-Those are currently set in [platform.yaml](./platform.yaml). If you need the cluster to run a different branch or fork, change those values first.
+When you run `bash tools/run_stack_workflow.sh --stop-at <stage>`, the workflow packages the current repo, pushes that tag, and then applies the platform manifest.
 
 ## Secrets
 
@@ -71,6 +70,10 @@ Replace the example values before you do that.
 ```bash
 kubectl apply -f k8s/platform.yaml
 ```
+
+The manifest provisions Postgres, Kafka, MinIO, and the Kafka Connect plugin cache with the repo-managed `do-block-storage-retain` storage class, which uses the DigitalOcean block storage CSI driver with `reclaimPolicy: Retain`. Deleting those PVCs will not automatically delete their backing volumes; clean them up manually when that is intentional.
+
+If your cluster already has an older `do-block-storage-retain` definition, delete and recreate that `StorageClass` before a direct `kubectl apply`, because Kubernetes does not allow in-place updates to `StorageClass.parameters` or `volumeBindingMode`. The staged workflow handles that recreation for you through `tools/manage_stack.py`.
 
 ## Access
 

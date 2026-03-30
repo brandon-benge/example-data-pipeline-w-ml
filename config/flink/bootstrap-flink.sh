@@ -38,4 +38,18 @@ if [ ! -x /usr/bin/python ]; then
   ln -sf /usr/bin/python3 /usr/bin/python
 fi
 
+if [ ! -d /opt/flink/opt/python/pyflink_pkg ] && [ -f /opt/flink/opt/python/pyflink.zip ]; then
+  mkdir -p /opt/flink/opt/python/pyflink_pkg
+  python3 - <<'PY'
+import zipfile
+
+with zipfile.ZipFile("/opt/flink/opt/python/pyflink.zip") as archive:
+    archive.extractall("/opt/flink/opt/python/pyflink_pkg")
+PY
+fi
+
+if [ -d /opt/flink/opt/python/pyflink_pkg/pyflink/bin ]; then
+  chmod +x /opt/flink/opt/python/pyflink_pkg/pyflink/bin/*.sh
+fi
+
 exec /bin/sh "$@"

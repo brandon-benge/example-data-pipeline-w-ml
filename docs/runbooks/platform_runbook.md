@@ -164,8 +164,10 @@ kubectl apply -f k8s/platform.yaml
 kubectl delete -f k8s/platform.yaml --ignore-not-found=true
 kubectl get pods -A
 kubectl -n data-platform-infra logs job/kafka-bootstrap
-kubectl -n data-platform-serve logs job/superset-bootstrap
+kubectl -n data-platform-serve logs deploy/superset -c superset-bootstrap
 ```
+
+If `kubectl apply -f k8s/platform.yaml` fails on immutable `StorageClass` fields for `do-block-storage-retain`, delete that `StorageClass` and apply again. The staged workflow already recreates it through `tools/manage_stack.py up <stage>`.
 
 ## Seed Source Data
 
@@ -201,21 +203,6 @@ Check topic bootstrap logs:
 kubectl -n data-platform-infra logs job/kafka-bootstrap
 ```
 
-Capture Kafka broker, PVC, and on-disk metadata state before or during a pressure test:
-
-```bash
-bash tools/capture_kafka_state.sh --label before-pressure
-bash tools/capture_kafka_state.sh --watch --interval 5 --label pressure-watch
-```
-
-The script writes timestamped snapshots under `tmp/kafka-state-captures/` including:
-
-- live topic list and topic descriptions
-- KRaft quorum status and `meta.properties`
-- mounted Kafka data-directory listings and partition directories
-- Kafka pod placement, PVC state, bootstrap-job state, and recent infra events
-- Kafka container logs
-
 Kafka Connect source and sink registration are managed by bootstrap jobs from:
 
 - `config/debezium/connector-postgres.json`
@@ -223,8 +210,9 @@ Kafka Connect source and sink registration are managed by bootstrap jobs from:
 
 The sink deployment no longer builds the Iceberg plugin at startup. The helper
 below validates the required JARs, builds them locally from upstream Iceberg if
-they are missing, ensures `pvc/kafka-connect-plugin-cache` exists, and uploads
-the resulting JAR set:
+they are missing, ensures the repo-managed `do-block-storage-retain`
+`StorageClass` and `pvc/kafka-connect-plugin-cache` exist, waits for the PVC to
+bind, and uploads the resulting JAR set:
 
 ```bash
 bash tools/preload_connect_plugin_cache.sh
@@ -391,7 +379,7 @@ If dbt outputs are missing:
 
 If dashboards are missing:
 
-- inspect `kubectl -n data-platform-serve logs job/superset-bootstrap`
+- inspect `kubectl -n data-platform-serve logs deploy/superset -c superset-bootstrap`
 
 If offline feature tables are missing:
 

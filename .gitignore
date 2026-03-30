@@ -21,7 +21,10 @@ metadata/lineage/latest_runs.json
 metadata/table_contracts/dq_results.jsonl
 metadata/table_contracts/dbt_test_results.jsonl
 metadata/table_contracts/latest_results.json
+tmp/
+dist/
 
 # Downloaded engine dependencies
 spark/jars/*.jar
 flink/jars/*.jar
+

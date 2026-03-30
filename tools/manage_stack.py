@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from platform_stacks import (
@@ -34,8 +36,23 @@ BOOTSTRAP_JOB_NAMESPACE_BY_NAME = {
     "kafka-connect-sinks-bootstrap": WORKLOAD_NAMESPACES["ingest"],
     "flink-bootstrap-bronze-events": WORKLOAD_NAMESPACES["process"],
     "flink-bootstrap-online-features": WORKLOAD_NAMESPACES["process"],
-    "superset-bootstrap": WORKLOAD_NAMESPACES["serve"],
 }
+RECREATED_CLUSTER_SCOPED_RESOURCES = (
+    ("storageclass", "do-block-storage-retain"),
+)
+RETAINED_PLATFORM_PVCS = (
+    "postgres-data",
+    "kafka-data",
+    "minio-data",
+)
+
+
+@dataclass(frozen=True)
+class PersistentVolumeBinding:
+    pvc_name: str
+    namespace: str
+    pv_name: str
+    volume_handle: str
 
 
 def run_kubectl(args: list[str]) -> int:
@@ -62,6 +79,75 @@ def kubectl_success(args: list[str]) -> bool:
         text=True,
     )
     return completed.returncode == 0
+
+
+def resolve_pvc_binding(pvc_name: str, namespace: str) -> PersistentVolumeBinding | None:
+    if not kubectl_success(["get", "pvc", pvc_name, "-n", namespace]):
+        return None
+
+    pv_name = kubectl_output(
+        ["get", "pvc", pvc_name, "-n", namespace, "-o", "jsonpath={.spec.volumeName}"]
+    )
+    if not pv_name:
+        return None
+
+    volume_handle = kubectl_output(
+        ["get", "pv", pv_name, "-o", "jsonpath={.spec.csi.volumeHandle}"]
+    )
+    return PersistentVolumeBinding(
+        pvc_name=pvc_name,
+        namespace=namespace,
+        pv_name=pv_name,
+        volume_handle=volume_handle,
+    )
+
+
+def delete_retained_volume(binding: PersistentVolumeBinding) -> int:
+    exit_code = 0
+
+    print(f"Deleting pvc/{binding.pvc_name} in namespace {binding.namespace}...")
+    result = run_kubectl(
+        [
+            "delete",
+            "pvc",
+            binding.pvc_name,
+            "-n",
+            binding.namespace,
+            "--ignore-not-found=true",
+            "--wait=false",
+        ]
+    )
+    if result != 0:
+        exit_code = result
+
+    print(f"Deleting pv/{binding.pv_name}...")
+    result = run_kubectl(
+        ["delete", "pv", binding.pv_name, "--grace-period=0", "--force", "--ignore-not-found=true"]
+    )
+    if result != 0:
+        exit_code = result
+
+    if binding.volume_handle:
+        if shutil.which("doctl") is None:
+            print(
+                f"Unable to delete DigitalOcean volume {binding.volume_handle}: "
+                "doctl is not installed or not on PATH."
+            )
+            return 1 if exit_code == 0 else exit_code
+        print(f"Deleting DigitalOcean volume {binding.volume_handle} via doctl...")
+        result = subprocess.run(
+            ["doctl", "compute", "volume", "delete", binding.volume_handle, "-f"],
+            cwd=ROOT,
+        ).returncode
+        if result != 0:
+            exit_code = result
+    else:
+        print(
+            f"Skipping doctl volume deletion for pvc/{binding.pvc_name}: "
+            "pv does not expose .spec.csi.volumeHandle."
+        )
+
+    return exit_code
 
 
 def terminating_workload_namespaces() -> list[str]:
@@ -166,6 +252,16 @@ def cmd_up(stack: str) -> int:
         if result != 0:
             exit_code = result
 
+    # StorageClass parameters and volumeBindingMode are immutable, so recreate
+    # the repo-managed class before reapplying the manifest.
+    for resource_kind, resource_name in RECREATED_CLUSTER_SCOPED_RESOURCES:
+        print(f"Recreating {resource_kind}/{resource_name} before apply.")
+        result = run_kubectl(
+            ["delete", resource_kind, resource_name, "--ignore-not-found=true"]
+        )
+        if result != 0:
+            exit_code = result
+
     print(f"Applying Kubernetes platform manifest for logical stack '{stack}'.")
     result = run_kubectl(["apply", "-f", str(K8S_MANIFEST)])
     if result != 0:
@@ -197,16 +293,40 @@ def cmd_destroy_all() -> int:
     print("Destroying the full Kubernetes platform, including PVCs.")
     exit_code = 0
 
-    # Delete PVCs explicitly before namespace teardown so storage cleanup can start immediately.
-    for pvc_name, namespace in PVC_NAMESPACE_BY_NAME.items():
-        print(f"Deleting pvc/{pvc_name} in namespace {namespace}...")
-        result = run_kubectl(["delete", "pvc", pvc_name, "-n", namespace, "--ignore-not-found=true", "--wait=false"])
-        if result != 0:
-            exit_code = result
+    # Capture retained bindings before manifest teardown so we can still delete the
+    # underlying PVs and block volumes after workloads and namespaces begin terminating.
+    retained_bindings: list[PersistentVolumeBinding] = []
+    for pvc_name in RETAINED_PLATFORM_PVCS:
+        namespace = PVC_NAMESPACE_BY_NAME[pvc_name]
+        binding = resolve_pvc_binding(pvc_name, namespace)
+        if binding is None:
+            continue
+        retained_bindings.append(binding)
 
+    # Delete manifest-managed resources first so pods release their PVC mounts before
+    # we attempt storage cleanup.
     for manifest in (K8S_SECRETS_MANIFEST, K8S_MANIFEST):
         print(f"Deleting resources from {manifest.name}...")
         result = run_kubectl(["delete", "-f", str(manifest), "--ignore-not-found=true", "--wait=false"])
+        if result != 0:
+            exit_code = result
+
+    # Delete any remaining PVCs explicitly after workload teardown has been requested so
+    # storage cleanup can start without waiting for namespace garbage collection.
+    for pvc_name, namespace in PVC_NAMESPACE_BY_NAME.items():
+        if pvc_name in RETAINED_PLATFORM_PVCS:
+            continue
+        print(f"Deleting pvc/{pvc_name} in namespace {namespace}...")
+        result = run_kubectl(
+            ["delete", "pvc", pvc_name, "-n", namespace, "--ignore-not-found=true", "--wait=false"]
+        )
+        if result != 0:
+            exit_code = result
+
+    # Delete retained block volumes explicitly after workloads begin terminating so
+    # attached disks are more likely to detach cleanly while still avoiding orphaned DO volumes.
+    for binding in retained_bindings:
+        result = delete_retained_volume(binding)
         if result != 0:
             exit_code = result
 

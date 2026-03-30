@@ -5,9 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NAMESPACE="data-platform-ingest"
 PVC_NAME="kafka-connect-plugin-cache"
 POD_NAME="kafka-connect-plugin-cache-loader"
+STORAGE_CLASS_NAME="do-block-storage-retain"
 DEFAULT_LOCAL_CACHE_ROOT="${ROOT_DIR}/.cache/iceberg-kafka-connect"
 SOURCE_DIR="${1:-}"
-ICEBERG_VERSION="$(sed -n 's/^ARG ICEBERG_VERSION=//p' "${ROOT_DIR}/config/debezium/Dockerfile" | head -1)"
+ICEBERG_VERSION="${ICEBERG_VERSION:-1.10.1}"
 LOCAL_PLUGIN_DIR="${DEFAULT_LOCAL_CACHE_ROOT}/${ICEBERG_VERSION}/lib"
 REQUIRED_JAR_PATTERNS=(
   'iceberg-kafka-connect-*.jar'
@@ -38,6 +39,12 @@ cleanup() {
   kubectl -n "$NAMESPACE" delete pod "$POD_NAME" --ignore-not-found >/dev/null 2>&1 || true
 }
 
+find_running_sinks_pod() {
+  kubectl -n "$NAMESPACE" get pods \
+    -l app.kubernetes.io/name=kafka-connect-sinks \
+    -o jsonpath='{range .items[?(@.status.phase=="Running")]}{.metadata.name}{"\n"}{end}' 2>/dev/null | head -n 1
+}
+
 require_command() {
   local command_name="$1"
   if ! command -v "$command_name" >/dev/null 2>&1; then
@@ -63,29 +70,68 @@ validate_plugin_dir() {
 
 build_plugin_dir() {
   local target_dir="$1"
-  local image_tag="local/iceberg-connect-builder:${ICEBERG_VERSION}"
-  local container_name="iceberg-connect-builder-${ICEBERG_VERSION//./-}"
+  local build_root
+  local output_dir
 
   require_command docker
 
   mkdir -p "$target_dir"
+  build_root="$(mktemp -d)"
+  output_dir="${build_root}/output"
+  mkdir -p "$output_dir"
+
+  trap 'rm -rf "$build_root"' RETURN
 
   echo "Building Apache Iceberg Kafka Connect runtime ${ICEBERG_VERSION} locally"
-  docker build \
-    --target iceberg_connect_builder \
-    --tag "$image_tag" \
-    -f "${ROOT_DIR}/config/debezium/Dockerfile" \
-    "${ROOT_DIR}"
-
-  docker rm -f "$container_name" >/dev/null 2>&1 || true
-  docker create --name "$container_name" "$image_tag" >/dev/null
+  docker run --rm \
+    -v "${build_root}:/workspace" \
+    gradle:8.10.2-jdk17 \
+    bash -lc "
+      set -euo pipefail
+      apt-get update
+      apt-get install -y --no-install-recommends curl ca-certificates tar gzip unzip findutils
+      rm -rf /var/lib/apt/lists/*
+      mkdir -p /workspace/src /workspace/output
+      curl --retry 5 --retry-all-errors --retry-delay 2 -fSL \
+        -o /tmp/apache-iceberg-src.tar.gz \
+        https://downloads.apache.org/iceberg/apache-iceberg-${ICEBERG_VERSION}/apache-iceberg-${ICEBERG_VERSION}.tar.gz
+      tar -xzf /tmp/apache-iceberg-src.tar.gz --strip-components=1 -C /workspace/src
+      rm -f /tmp/apache-iceberg-src.tar.gz
+      cd /workspace/src
+      ./gradlew --no-daemon -x test -x integrationTest clean build
+      artifact=\$(find /workspace/src/kafka-connect/kafka-connect-runtime/build/distributions -maxdepth 1 \\( -name '*.zip' -o -name '*.tar' -o -name '*.tgz' \\) | head -1)
+      test -n \"\$artifact\"
+      mkdir -p /tmp/iceberg-connect
+      case \"\$artifact\" in
+        *.zip) unzip -q \"\$artifact\" -d /tmp/iceberg-connect ;;
+        *.tar|*.tgz) tar -xf \"\$artifact\" -C /tmp/iceberg-connect ;;
+      esac
+      dist_dir=\$(find /tmp/iceberg-connect -maxdepth 2 -type d -name 'iceberg-kafka-connect-runtime*' | head -1)
+      test -n \"\$dist_dir\"
+      cp -R \"\$dist_dir\"/lib/* /workspace/output/
+    "
 
   rm -rf "${target_dir:?}/"*
-  docker cp "${container_name}:/opt/iceberg-kafka-connect/." "$target_dir"
-  docker rm -f "$container_name" >/dev/null
+  cp -R "${output_dir}/." "$target_dir"
 }
 
 ensure_pvc() {
+  echo "Ensuring storageclass/${STORAGE_CLASS_NAME} exists"
+  if ! kubectl get storageclass "${STORAGE_CLASS_NAME}" >/dev/null 2>&1; then
+    kubectl apply -f - <<EOF >/dev/null
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ${STORAGE_CLASS_NAME}
+provisioner: dobs.csi.digitalocean.com
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  csi.storage.k8s.io/fstype: ext4
+EOF
+  fi
+
   echo "Ensuring namespace ${NAMESPACE} exists"
   kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
@@ -98,21 +144,73 @@ metadata:
   namespace: ${NAMESPACE}
 spec:
   accessModes: ["ReadWriteOnce"]
-  storageClassName: do-block-storage
+  storageClassName: ${STORAGE_CLASS_NAME}
   resources:
     requests:
       storage: 100Mi
 EOF
 }
 
+wait_for_pvc_binding() {
+  local timeout_seconds="${1:-180}"
+  local elapsed=0
+  local phase=""
+
+  while (( elapsed < timeout_seconds )); do
+    phase="$(kubectl -n "$NAMESPACE" get pvc "$PVC_NAME" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+    if [[ "$phase" == "Bound" ]]; then
+      return 0
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+
+  echo "pvc/${PVC_NAME} did not bind within ${timeout_seconds}s (last phase: ${phase:-unknown})" >&2
+  kubectl -n "$NAMESPACE" get pvc "$PVC_NAME" -o wide >&2 || true
+  kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -n 20 >&2 || true
+  return 1
+}
+
+storage_class_binding_mode() {
+  kubectl get storageclass "${STORAGE_CLASS_NAME}" -o jsonpath='{.volumeBindingMode}' 2>/dev/null || true
+}
+
+diagnose_loader_failure() {
+  kubectl -n "$NAMESPACE" get pvc "$PVC_NAME" -o wide >&2 || true
+  kubectl -n "$NAMESPACE" get pod "$POD_NAME" -o wide >&2 || true
+  kubectl -n "$NAMESPACE" logs "$POD_NAME" >&2 || true
+  kubectl get nodes -o wide >&2 || true
+  kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -n 20 >&2 || true
+}
+
 upload_plugin_dir() {
   local dir="$1"
+  local binding_mode=""
+  local target_pod=""
+  local target_container=""
 
   trap cleanup EXIT
 
-  echo "Creating helper pod ${POD_NAME}"
-  cleanup
-  kubectl apply -f - <<EOF >/dev/null
+  target_pod="$(find_running_sinks_pod)"
+  if [[ -n "$target_pod" ]]; then
+    target_container="kafka-connect-sinks"
+    echo "Using existing pod ${target_pod} because pvc/${PVC_NAME} is already attached there"
+  else
+    target_container="loader"
+  fi
+
+  binding_mode="$(storage_class_binding_mode)"
+  if [[ -z "$target_pod" && "$binding_mode" != "WaitForFirstConsumer" ]]; then
+    echo "Waiting for pvc/${PVC_NAME} to bind"
+    wait_for_pvc_binding 180
+  elif [[ -z "$target_pod" ]]; then
+    echo "storageclass/${STORAGE_CLASS_NAME} uses WaitForFirstConsumer; creating helper pod before waiting on pvc/${PVC_NAME}"
+  fi
+
+  if [[ -z "$target_pod" ]]; then
+    echo "Creating helper pod ${POD_NAME}"
+    cleanup
+    kubectl apply -f - <<EOF >/dev/null
 apiVersion: v1
 kind: Pod
 metadata:
@@ -133,16 +231,23 @@ spec:
         claimName: ${PVC_NAME}
 EOF
 
-  kubectl -n "$NAMESPACE" wait --for=condition=Ready "pod/${POD_NAME}" --timeout=180s >/dev/null
+    if ! kubectl -n "$NAMESPACE" wait --for=condition=Ready "pod/${POD_NAME}" --timeout=180s >/dev/null; then
+      echo "Helper pod ${POD_NAME} did not become Ready" >&2
+      diagnose_loader_failure
+      return 1
+    fi
+
+    target_pod="$POD_NAME"
+  fi
 
   echo "Resetting cached plugin directory"
-  kubectl -n "$NAMESPACE" exec "$POD_NAME" -- /bin/sh -c 'rm -rf /plugin/iceberg && mkdir -p /plugin/iceberg'
+  kubectl -n "$NAMESPACE" exec "$target_pod" -c "$target_container" -- /bin/sh -c 'rm -rf /plugin/iceberg && mkdir -p /plugin/iceberg'
 
   echo "Copying plugin jars from ${dir}"
-  kubectl -n "$NAMESPACE" cp "${dir}/." "${POD_NAME}:/plugin/iceberg"
+  kubectl -n "$NAMESPACE" cp "${dir}/." "${target_pod}:/plugin/iceberg" -c "$target_container"
 
   echo "Verifying cached plugin jars in pvc/${PVC_NAME}"
-  kubectl -n "$NAMESPACE" exec "$POD_NAME" -- /bin/sh -c 'find /plugin/iceberg -maxdepth 1 -name "*.jar" | sort'
+  kubectl -n "$NAMESPACE" exec "$target_pod" -c "$target_container" -- /bin/sh -c 'find /plugin/iceberg -maxdepth 1 -name "*.jar" | sort'
 }
 
 main() {
@@ -154,7 +259,7 @@ main() {
   require_command kubectl
 
   if [[ -z "$ICEBERG_VERSION" ]]; then
-    echo "Unable to determine ICEBERG_VERSION from config/debezium/Dockerfile" >&2
+    echo "ICEBERG_VERSION is empty" >&2
     exit 1
   fi
 

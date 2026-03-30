@@ -36,7 +36,6 @@ SERVICE_NAMESPACE_GROUP: dict[str, str] = {
     "dbt-scheduler": "process",
     "trino": "serve",
     "superset": "serve",
-    "superset-bootstrap": "serve",
     "metadata": "govern",
 }
 
@@ -64,7 +63,6 @@ SERVICE_RESOURCE_KIND: dict[str, str] = {
     "dbt-scheduler": "deployment",
     "metadata": "deployment",
     "superset": "deployment",
-    "superset-bootstrap": "job",
 }
 
 
@@ -276,7 +274,6 @@ STACKS: dict[str, StackDefinition] = {
             "iceberg-rest",
             "trino",
             "superset",
-            "superset-bootstrap",
             "metadata",
         ),
         validation_sections=("services", "http", "trino", "metadata"),

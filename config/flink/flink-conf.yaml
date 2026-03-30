@@ -1,8 +1,8 @@
 jobmanager.rpc.address: flink-jobmanager
-jobmanager.memory.process.size: 2048m
-# Small-cluster profile: keep the job runnable on a 3-node dev cluster.
-taskmanager.memory.process.size: 3072m
-taskmanager.numberOfTaskSlots: 2
+jobmanager.memory.process.size: 2560m
+blob.server.port: 6124
+taskmanager.memory.process.size: 3584m
+taskmanager.numberOfTaskSlots: 3
 parallelism.default: 1
 rest.port: 8081
 io.tmp.dirs: /tmp/flink-tmp

@@ -42,7 +42,7 @@ The design is intentionally small enough to run on a desktop through Docker Comp
 
 - Apache Superset is open-source, container-friendly, and well suited for dashboard demos.
 - Trino has strong Iceberg support and can query Gold tables directly via the Iceberg REST catalog and MinIO-backed storage.
-- Trino remains the shared SQL access layer for analytics and operational checks, but it must also allow controlled write paths used by compose-managed catalog bootstrap and ML model-registry metadata writes.
+- Trino remains the shared SQL access layer for analytics and operational checks, but it must also allow controlled write paths used by Kubernetes-managed catalog bootstrap and ML model-registry metadata writes where those responsibilities remain in scope.
 
 ### BI question examples
 
@@ -66,7 +66,7 @@ The current repo boundary is:
 - ML code trains models from those tables
 - training emits local artifact files under `ml/artifacts/`, while canonical model binaries are stored in MinIO object storage
 - model-version metadata is stored in an Iceberg registry table
-- the compose-managed `ml-inference` container is the runtime serving path, queries `iceberg.silver.ml_model_registry` for the latest manifest, downloads artifacts from MinIO in memory, and serves the scoring endpoints
+- the Kubernetes-managed inference workload is the runtime serving path, queries `iceberg.silver.ml_model_registry` for the latest manifest, downloads artifacts from MinIO in memory, and serves the scoring endpoints
 - `tools/demo_realtime_scoring.py` is the repo's CLI helper for exercising the same scoring logic used by the inference service
 
 ### Current algorithm set

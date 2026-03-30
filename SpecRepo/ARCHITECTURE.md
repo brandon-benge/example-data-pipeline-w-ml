@@ -3,9 +3,18 @@
 > Note
 > This architecture file still describes the pre-split combined platform. The current repo is being narrowed to the data platform boundary described in [../docs/ml_platform_split.md](../docs/ml_platform_split.md).
 
+## Current Runtime Delivery Model
+
+- All runtime images are upstream images. The repo does not maintain or publish repo-built Kafka, Flink, or similar core runtime images to a paid registry.
+- Flink runs on the upstream `flink:1.20.3-scala_2.12-java17` image.
+- Kafka runs on the upstream `apache/kafka:4.2.0` image.
+- The platform relies on runtime init/bootstrap steps and repo-bundle or repo-sync style delivery rather than baking repo behavior into custom service images.
+- Kafka Connect sink runtime depends on a shared plugin-cache PVC populated with repo-preloaded runtime JARs rather than plugin installation on every startup.
+- Repo bundle distribution is a first-class deployment artifact and should behave like a content-addressed artifact even when operationally published behind a stable tag.
+
 ## 1. Overview
 
-The system is a laptop-scale but production-shaped data and ML platform for a synthetic retail advertising and commerce domain. It generates source data into Postgres and Kafka, captures CDC with Debezium, lands replayable Bronze data in Iceberg on MinIO, builds governed Silver data with Spark, curates Gold analytics and feature tables with dbt, serves BI through Trino and Apache Superset, and supports ML training plus approved Redis-backed online features. The design preserves replayability, explicit governance, deterministic derived layers, and a lightweight operational footprint.
+The system is a laptop-scale but production-shaped data platform for a synthetic retail advertising and commerce domain. It generates source data into Postgres and Kafka, captures CDC with Debezium, lands replayable Bronze data in Iceberg on MinIO, builds governed Silver data with Spark, curates Gold analytics and feature tables with dbt, serves BI through Trino and Apache Superset, and publishes governed offline feature datasets for downstream ML consumers. The design preserves replayability, explicit governance, deterministic derived layers, and a lightweight operational footprint.
 
 ```mermaid
 flowchart TB
@@ -39,9 +48,8 @@ flowchart TB
         subgraph CONS[Consumption]
             DBT[dbt on Spark SQL]
             BI[BI / Ad Hoc SQL]
-            ML[Training / Feature Jobs]
-            REDIS[(Redis Online Feature Store)]
-            INF[Online Inference / App]
+            OF[Published Offline Feature Datasets]
+            EXTML[External ML Platform]
         end
     end
 
@@ -63,15 +71,14 @@ flowchart TB
     KC --> BR
     FL -. event schema lookup .-> SR
     FL --> BR
-    FL --> REDIS
     BR --> SP
     SP --> SV
     SV --> DBT --> GD
-    SV --> ML
+    SV --> OF
     FSPEC --> FL
     FSPEC --> SP
-    REDIS --> INF
     GD --> BI
+    OF --> EXTML
     REST --- BR
     REST --- SV
     REST --- GD
@@ -91,6 +98,7 @@ flowchart TB
 - Explicit governance for masking, tokenization, ownership, lineage, classification, and certification.
 - Shared versioned feature definitions across offline and online paths.
 - Low infrastructure footprint suitable for local or developer-scale Kubernetes execution.
+- Clean boundary between the data platform and downstream ML-platform responsibilities.
 
 ### Architecture Style
 - Hybrid batch and streaming lakehouse architecture with a separate metadata and governance control plane.
@@ -110,20 +118,24 @@ flowchart TB
 - CDC is used for business and transactional state rather than the high-volume clickstream.
 - Kafka Connect writes Bronze CDC Iceberg tables through one Apache Iceberg sink connector per source table.
 - This removes Flink CDC handling from the operational CDC path while keeping Kafka as the transport backbone.
+- Kafka Connect sink runtime depends on a shared plugin-cache PVC populated ahead of startup with the required Iceberg connector JAR set.
+- The design intentionally avoids rebuilding or reinstalling sink plugin artifacts during every sink pod startup.
 
 ### Kafka
 - Holds both CDC topics and direct event topics.
 - Local deployment uses a single-broker Kafka cluster in KRaft mode.
+- Runtime uses the upstream `apache/kafka:4.2.0` image with repo-owned configuration and bootstrap behavior layered in at deploy time rather than through a custom Kafka image.
 
 ### Flink
 - Implemented in PyFlink.
-- Consumes direct event streams, lands raw direct-event history to Bronze, computes approved online features, writes low-latency serving features to Redis, resolves direct-event schemas through Schema Registry, and routes schema failures to DLQ.
+- Consumes direct event streams, lands raw direct-event history to Bronze, resolves direct-event schemas through Schema Registry, and routes schema failures to DLQ.
 - Flink responsibilities also include lightweight streaming normalization where helpful.
+- Runtime uses the upstream `flink:1.20.3-scala_2.12-java17` image with init-time dependency/bootstrap setup rather than a repo-built Flink image.
 
 ### Spark
 - Runs via `spark-submit` in the Spark container in `local[*]` mode.
-- Performs Bronze validation, dedupe, current-state resolution, delete handling, masking, quarantine handling, aggregate construction, backfills, offline feature creation, and offline-versus-Redis parity reconciliation.
-- Spark batch responsibilities also include canonical offline feature dataset creation.
+- Performs Bronze validation, dedupe, current-state resolution, delete handling, masking, quarantine handling, aggregate construction, backfills, and offline feature creation.
+- Spark batch responsibilities also include canonical offline feature dataset creation for downstream consumers.
 
 ### Iceberg, MinIO, and REST catalog
 - MinIO stores Iceberg data files.
@@ -132,7 +144,7 @@ flowchart TB
 - Local mode keeps the catalog single-node and lightweight.
 - The current local implementation uses the existing Postgres service as the JDBC metadata backend for the REST catalog.
 - That shared Postgres usage is a demo shortcut; more realistic deployments would isolate OLTP, Iceberg catalog, Superset metadata, and related control-plane state.
-- Bronze CDC namespaces and table DDL are bootstrapped by a dedicated compose-managed service when the REST catalog comes online rather than owned by Spark or Flink.
+- Bronze CDC namespaces and table DDL are bootstrapped by a dedicated Kubernetes job when the REST catalog comes online rather than owned by Spark or Flink.
 
 ### Schema Registry
 - Used only for `events.session_event`.
@@ -158,26 +170,11 @@ flowchart TB
 - Ad hoc SQL access can share the same Trino endpoint while dashboards remain the primary BI surface.
 - Required prebuilt BI assets include datasets, SQL queries, charts, and dashboards for campaign performance, advertiser engagement, customer browse-to-purchase funnel analysis, and category/product/channel contribution.
 
-### ML and inference
-- The platform supports three concrete operational decision problems: customer purchase propensity, campaign success propensity, and advertiser budget expansion propensity.
-- Training reads dbt-built feature tables in `iceberg.silver`.
-- Training jobs read those feature tables directly.
-- Artifacts are written locally under `ml/artifacts/`, published canonically to MinIO, and registered in `iceberg.silver.ml_model_registry`.
-- The compose-managed `ml-inference` container serves separate HTTP endpoints per use case.
-- Model refresh is handled by the compose-managed `ml-training` container, which retrains and republishes all configured models.
-- Customer scoring uses Redis online features plus offline context hydrated through Trino; campaign and advertiser scoring hydrate offline context from Iceberg-backed feature tables through Trino.
-- The current local baseline algorithm family is custom logistic regression for the three local binary classification problems.
-- Customer purchase and campaign success scores can be emitted side by side from the same demo workflow without changing the streaming or batch platform layers.
-- Customer purchase propensity addresses whether a customer is likely to purchase soon and is intended for promotions, recommendations, nudges, and discount-efficiency decisions.
-- Campaign success propensity addresses whether a campaign is likely to perform well soon and is intended for ranking, intervention, and account-team prioritization.
-- Advertiser budget expansion propensity addresses whether an advertiser is likely to increase spend soon and is intended for outreach, upsell detection, and account-management prioritization.
-- Representative feature inputs include recent views, ad clicks, add-to-cart activity, purchase history, average order value, recency, recent impressions, CTR, attributed orders, attributed revenue, active campaigns, and sales contact activity.
-- Current local model artifact families are `customer_realtime`, `campaign`, and `advertiser`.
-- Example scoring outputs are `customer_purchase_propensity`, `campaign_success_propensity`, and `advertiser_budget_expansion_propensity`.
-- Current local scoring pattern combines the latest model artifact with Redis-served online features where applicable and offline context hydrated from Iceberg-backed feature tables through Trino.
-- ML artifact outputs include training dataset snapshots, model binaries, metrics JSON, and feature definition version metadata.
-- Spark periodically recomputes the same feature values from Bronze or Silver for parity checks and historical truth.
-- Online inference or application services retrieve features from Redis at request time.
+### Published offline features and ML boundary
+- This repo publishes governed offline feature datasets for downstream ML consumers.
+- Feature tables are built from Bronze, Silver, and Gold-adjacent governed data products and are intended to be consumed by a sibling ML platform.
+- Training workloads, inference APIs, model registry ownership, rollout logic, and online serving are outside the steady-state ownership boundary of this repo.
+- Shared feature definitions may still be versioned here where they are required for data-platform transforms, but downstream ML execution is not the responsibility of this architecture.
 
 ## 3. Interaction and Data Flow
 
@@ -187,8 +184,7 @@ flowchart TB
 3. Kafka Connect sinks CDC topics into Bronze Iceberg tables, and Flink lands valid direct events into Bronze while routing schema failures to DLQ.
 4. Spark reads Bronze, runs quality checks, applies deterministic deduplication plus governance controls, and publishes Silver.
 5. dbt reads Silver only and builds Gold dimensions, facts, marts, and feature tables.
-6. Trino, Superset, and ML jobs consume curated outputs; Flink and Redis support approved low-latency feature serving.
-7. Model artifacts are cached locally, published to MinIO, and registered in `iceberg.silver.ml_model_registry`.
+6. Trino and Superset consume curated outputs, and governed offline feature datasets are published for downstream ML-platform use.
 
 ### Sequence diagrams
 
@@ -357,11 +353,10 @@ sequenceDiagram
 - Metadata, governance, and quality artifacts are repository-managed and version-controlled.
 
 ### Implementation notes
-- Some existing repository assets still reflect compose-era bootstrap helpers and are part of the documented local implementation shape, including `config/iceberg/bootstrap-cdc-rest-catalog.sh` and `config/debezium/register-connector.sh`.
-- Docker Compose-era topic bootstrap logic initializes Kafka topics automatically during startup using helper containers, entrypoints, or bootstrap services; the bootstrap command may use `kafka-topics --create --if-not-exists --bootstrap-server kafka:9092`.
+- Some existing repository assets still reflect older local-bootstrap helpers, including `config/iceberg/bootstrap-cdc-rest-catalog.sh` and `config/debezium/register-connector.sh`, but the canonical runtime model is Kubernetes-managed bootstrap jobs.
 - Superset bootstrap expectations include `superset import-dashboards --path /app/bi/dashboards --username admin`.
 - A local Trino connection URI such as `trino://trino:8080/iceberg` is acceptable for Superset bootstrap.
-- Bootstrap references are expected to use `kubectl apply -f k8s/platform.yaml` rather than Compose-era startup commands.
+- Bootstrap references are expected to use `kubectl apply -f k8s/platform.yaml` rather than any Docker Compose-era startup commands.
 - Existing bootstrap documentation may refer to Superset bootstrap running from `config/superset/bootstrap/` and local topic definitions under `config/kafka/topics/`.
 - Existing manifests and runbooks may still show `data-platform` as a flat namespace; that is an implementation lag and not the target deployment contract.
 - Repository structure is expected to center around `config/`, `generator/`, `flink/`, `spark/`, `dbt/`, `bi/`, `ml/`, `tools/`, `metadata/`, `docs/`, and `tests/`.
@@ -369,7 +364,7 @@ sequenceDiagram
 ## 7. Tradeoffs and Notes
 
 ### Decision: `hybrid streaming and batch`
-- Chosen approach: Flink handles direct events and low-latency online features; Spark and dbt handle deterministic Silver and Gold batch layers.
+- Chosen approach: Flink handles direct-event streaming ingestion; Spark and dbt handle deterministic Silver and Gold batch layers plus offline feature publication.
 - Alternative considered: one engine for all transformations.
 - Why chosen: matches realistic platform patterns while keeping the local implementation understandable.
 - Cost of this choice: more moving parts and cross-engine coordination.

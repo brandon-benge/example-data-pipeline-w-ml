@@ -28,16 +28,6 @@ while true; do
 
   if [ "$cycle_failed" -eq 0 ]; then
     sleep "$chunk_sleep_seconds"
-    run_chunk "dimensions" --select dimensions || cycle_failed=1
-  fi
-
-  if [ "$cycle_failed" -eq 0 ]; then
-    sleep "$chunk_sleep_seconds"
-    run_chunk "facts" --select facts || cycle_failed=1
-  fi
-
-  if [ "$cycle_failed" -eq 0 ]; then
-    sleep "$chunk_sleep_seconds"
     run_chunk "features" --select features || cycle_failed=1
   fi
 

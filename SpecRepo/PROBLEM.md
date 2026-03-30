@@ -24,7 +24,7 @@ Secondary:
 - Synthetic source generation into Postgres and Kafka.
 - Debezium CDC capture from Postgres into Kafka.
 - Schema-managed direct event ingestion.
-- Bronze, Silver, and Gold Iceberg lakehouse layers on MinIO with Iceberg REST catalog.
+- Bronze, Silver, and Gold Iceberg layers on MinIO with Iceberg REST catalog.
 - Streaming transformation with Flink and batch transformation with Spark.
 - dbt transformation of Silver into Gold dimensions, facts, marts, and feature tables.
 - Redis-backed online feature serving for approved low-latency features.

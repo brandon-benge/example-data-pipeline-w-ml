@@ -773,11 +773,22 @@ def check_data_stability(
             results.append(CheckResult(f"stability:{stack_name}", True, "no count-based metrics selected"))
             return
 
-        samples = max(1, stability_window_seconds // STABILITY_POLL_SECONDS)
+        started_at = time.monotonic()
+        deadline = started_at + stability_window_seconds
+        sample = 0
         print(f"[stability:{stack_name}] Monitoring {metric_count} metrics for {stability_window_seconds}s.")
-        for sample in range(1, samples + 1):
-            print(f"[stability:{stack_name}] Sample {sample}/{samples}")
-            time.sleep(STABILITY_POLL_SECONDS)
+        while True:
+            remaining_seconds = deadline - time.monotonic()
+            if remaining_seconds <= 0:
+                break
+
+            sample += 1
+            sleep_seconds = min(STABILITY_POLL_SECONDS, max(0.0, remaining_seconds))
+            elapsed_seconds = int(time.monotonic() - started_at)
+            print(
+                f"[stability:{stack_name}] Sample {sample} elapsed={elapsed_seconds}s remaining={int(remaining_seconds)}s"
+            )
+            time.sleep(sleep_seconds)
             current = capture_stability_metrics(
                 context,
                 enabled_sections,

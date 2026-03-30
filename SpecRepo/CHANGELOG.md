@@ -28,6 +28,20 @@
 
 ## Entries
 
+### 2026-03-27
+- Changed: Moved platform persistence expectations toward PVC-backed storage classes as the standard runtime pattern, moved Kafka and Flink runtime operation fully onto upstream images, and shifted Kafka Connect plugin delivery toward a shared PVC-backed JAR cache plus repo-bundle based repo access instead of custom runtime image rebuilds or git downloads at startup.
+- Why: The platform now treats upstream images plus runtime bootstrap/config layering as the intended operating model, and persistent/runtime artifacts need to reflect that model explicitly.
+- Files affected: `ARCHITECTURE.md`, `REQUIREMENTS.md` and operational deployment manifests and scripts outside `SpecRepo/`.
+- Risk / impact: Medium; runtime behavior depends more heavily on bootstrap/init correctness, shared cache PVC semantics, and repo-bundle delivery.
+- Follow-up required: Align remaining spec files with the upstream-image runtime contract and plugin-cache delivery model.
+
+### 2026-03-27
+- Changed: Removed cache-backed hot feature serving and training responsibilities from this data-platform repo and treated them as belonging to the separate ML platform boundary.
+- Why: The repo scope is being narrowed so that the data platform owns data movement and governed analytical layers, while the ML platform owns model training and serving concerns.
+- Files affected: `ARCHITECTURE.md`, `PROBLEM.md`, and related scope documents.
+- Risk / impact: Medium; some current implementation details and diagrams still reflect the older combined platform and need further cleanup.
+- Follow-up required: Continue removing combined-platform assumptions from `SpecRepo/` and supporting docs.
+
 ### 2026-03-25
 - Changed: Replaced the single shared Kubernetes namespace assumption with workload-aligned namespaces for infrastructure, ingestion, processing, serving, and governance workloads.
 - Why: The deployment contract now needs namespace boundaries that reflect operational responsibility instead of a flat `data-platform` grouping.

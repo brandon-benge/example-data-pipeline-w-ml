@@ -84,7 +84,7 @@ flowchart LR
     class AUD,FAC fed
 ```
 
-**What the profile holds, and why federated audiences are drawn separately.** The AEP Real-Time Profile holds, per person: identities (EPID, ECID, CRM ID, hashed email), approved attributes (state, age band, holdings summary, assigned advisor, lifecycle stage), consent and preferences, nightly scores and top action, recent events, and membership of AEP-evaluated segments. Federated audiences are drawn separately because their logic needs data deliberately kept out of AEP, such as full household graphs, advisor books and policy history. The SQL runs in Databricks, and FAC brings back only the member list and hands it to Destinations.
+**What the profile holds, and why federated audiences are drawn separately.** The AEP Real-Time Profile holds, per person: identities (EPID, ECID, CRM ID, hashed email), approved attributes (state, age band, holdings summary, assigned advisor, lifecycle stage), consent and preferences, nightly scores and top action, recent events, and membership of AEP-evaluated segments. Federated audiences are drawn separately because their logic needs data deliberately kept out of AEP, such as full household graphs, advisor books and policy history. The SQL runs in Databricks, and FAC brings back only the segment's membership, the list of EPIDs who qualify, and hands it to Destinations.
 
 ### What the Browser Sends to Edge
 

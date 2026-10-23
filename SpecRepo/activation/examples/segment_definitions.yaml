@@ -1,0 +1,59 @@
+# Segments as code (03_SEGMENTATION.md, section 5). One audience shown per compute path.
+- id: cns_xsell_annuity_rollover_window_v1
+  name: Consumers in a 401(k) rollover window with high annuity propensity
+  version: 1
+  owner: consumer-marketing-annuity
+  steward: data-products-audiences
+  marketing_action: email_marketing
+  compute_path: aep_batch
+  logic:
+    pql: >
+      person._tenant.scores.annuityPropensity.decile >= 9
+      and person._tenant.lifeStage.rolloverWindow = true
+      and not person._tenant.holdings.hasAnnuity = true
+  requires_consent: [email]
+  suppressions: [sup_global_hard_stops_v4, sup_customer_care_v2, sup_frequency_cap_7d_v1]
+  expected_size: {min: 40000, max: 120000}
+  destinations: [sfmc_consumer]
+  holdout: {experiment_id: exp_annuity_xsell_fy27, share: 0.10}
+  expires_on: 2027-12-31
+
+- id: cns_acq_life_quote_abandon_2h_v2
+  name: Started a term life quote, did not complete within 2 hours
+  version: 2
+  owner: consumer-marketing-life
+  steward: data-products-audiences
+  marketing_action: email_marketing
+  compute_path: aep_streaming
+  logic:
+    pql: >
+      chain(xEvent, timestamp, [
+        A: WHAT(eventType = "quote.started" and productLine = "term_life"),
+        B: WHAT(eventType = "quote.completed") WHEN(<= 2 hours after A)
+      ]) with B absent
+    note: Illustrative; final PQL validated through the Segmentation API in a dev sandbox.
+  requires_consent: [email]
+  suppressions: [sup_global_hard_stops_v4]
+  expected_size: {min: 500, max: 8000, per: day}
+  destinations: [sfmc_consumer, salesforce_advisor_tasks]
+  expires_on: 2027-06-30
+
+- id: wkp_xsell_life_group_only_households_v1
+  name: Households with employer group life only and no individual life
+  version: 1
+  owner: workplace-marketing
+  steward: data-products-audiences
+  marketing_action: email_marketing
+  compute_path: federated
+  logic:
+    sql: |
+      select m.enterprise_person_id
+      from profile.household_member m
+      join profile.household_holdings_summary h using (household_id)
+      where h.has_group_life and not h.has_individual_life
+        and m.member_role in ('head', 'spouse')
+  requires_consent: [email]
+  suppressions: [sup_global_hard_stops_v4, sup_customer_care_v2]
+  expected_size: {min: 100000, max: 400000}
+  destinations: [sfmc_consumer]
+  expires_on: 2027-12-31

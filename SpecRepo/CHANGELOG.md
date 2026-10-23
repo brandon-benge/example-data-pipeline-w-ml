@@ -28,6 +28,13 @@
 
 ## Entries
 
+### 2026-10-23
+- Changed: Added `activation/`, a spec-first design for identity, profile, segmentation, activation, ML scoring, CRM and closed-loop measurement on top of the lakehouse, with an enterprise instance (AEP, Marketo, SFMC, Databricks) and a Benge Software instance.
+- Why: Extend the platform from governed analytics to governed activation, and keep one reusable reference design for consulting and for Benge Software products.
+- Files affected: `activation/*`, `README.md`.
+- Risk / impact: Low; design only, no change to existing lakehouse guarantees. Upstream asks are listed in `activation/01_TARGET_ARCHITECTURE.md`.
+- Follow-up required: Add `usage_labels` to governance YAML; confirm vendor capabilities marked (verify).
+
 ### 2026-03-27
 - Changed: Moved platform persistence expectations toward PVC-backed storage classes as the standard runtime pattern, moved Kafka and Flink runtime operation fully onto upstream images, and shifted Kafka Connect plugin delivery toward a shared PVC-backed JAR cache plus repo-bundle based repo access instead of custom runtime image rebuilds or git downloads at startup.
 - Why: The platform now treats upstream images plus runtime bootstrap/config layering as the intended operating model, and persistent/runtime artifacts need to reflect that model explicitly.

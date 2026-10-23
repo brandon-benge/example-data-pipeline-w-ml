@@ -1,0 +1,78 @@
+# Identity match rules for the offline graph build (02_IDENTITY.md, section 4).
+# Rules are data: a change here is a reviewed pull request, and the build
+# records rule_id on every edge it creates so the effect can be replayed.
+version: 3
+namespaces:
+  mdm_party_id:     {strength: hard}
+  crm_contact_id:   {strength: hard_within_source}
+  policy_owner_key: {strength: hard, normalize: [upper, strip_separators]}
+  ssn_token:        {strength: hard, zone: restricted, publish: edges_only}
+  email_sha256:     {strength: strong, normalize: [trim, lower, provider_dot_plus], max_hard_key_cardinality: 2}
+  phone_sha256:     {strength: medium, normalize: [e164], max_hard_key_cardinality: 3}
+  ecid:             {strength: device}
+  npn:              {strength: hard, entity: advisor}
+
+rules:
+  - id: T0-mdm
+    tier: 0
+    match: [mdm_party_id]
+    edge_type: same_person
+    action: auto_link
+
+  - id: T1-ssn-dob
+    tier: 1
+    match: [ssn_token, dob]
+    edge_type: same_person
+    action: auto_link
+
+  - id: T1-policy-owner
+    tier: 1
+    match: [policy_owner_key]
+    edge_type: same_person
+    action: auto_link
+
+  - id: T2-email-lastname
+    tier: 2
+    match: [email_sha256, last_name_norm]
+    guard: email_sha256.cardinality_ok
+    edge_type: same_person
+    action: auto_link
+
+  - id: T2-auth-web
+    tier: 2
+    match: [crm_contact_id, ecid]
+    source: authenticated_web_event
+    edge_type: same_person_device
+    action: auto_link
+
+  - id: T3-probabilistic
+    tier: 3
+    model: splink_person_v2
+    blocking: [soundex_last_zip3, email_sha256, phone_sha256]
+    thresholds:
+      auto_link: 0.95
+      steward_review: 0.80
+    edge_type: same_person
+
+  - id: H-address-lastname
+    tier: H
+    match: [address_norm, last_name_norm]
+    edge_type: household_candidate
+    action: household_derivation_only
+
+constraints:
+  - id: one-ssn-per-cluster
+    rule: count_distinct(ssn_token) <= 1
+    on_violation: cut_lowest_confidence_edge_and_queue
+  - id: one-dob-per-cluster-on-hard-keys
+    rule: count_distinct(dob where evidence_tier <= 1) <= 1
+    on_violation: cut_lowest_confidence_edge_and_queue
+  - id: giant-cluster
+    rule: node_count <= 25
+    on_violation: hold_publish_and_queue
+
+id_stability:
+  merge: keep_oldest_id
+  split: keep_id_on_part_with_most_hard_keys
+  reuse_retired_ids: false
+  emit: identity.id_change

@@ -30,6 +30,7 @@ Read the files in this order:
 - [DATA_MODEL.md](./DATA_MODEL.md): entities, source schemas, table inventories, key structure, and lifecycle.
 - [CONSISTENCY.md](./CONSISTENCY.md): ordering, replay, deduplication, commit semantics, and rebuild guarantees.
 - [ARCHITECTURE.md](./ARCHITECTURE.md): component model, deployment model, execution flow, sequence diagrams, and tradeoffs.
+- [activation/](./activation/README.md): identity, segmentation, activation, ML scoring, CRM and measurement design on top of the lakehouse.
 - [API_CONTRACTS.yaml](./API_CONTRACTS.yaml): machine-readable HTTP, Kafka, dataset-record, and online-feature contracts.
 
 ## Rationale

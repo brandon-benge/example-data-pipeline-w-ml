@@ -154,7 +154,7 @@ flowchart LR
         MATCH[Match and cluster]
         XREF["EPID lookup table and ID change log<br/>(person_xref, id_change)"]
         SURV[Survivorship: pick the best value per field]
-        PC[profile.person_core]
+        PC["Golden person record (profile.person_core)"]
     end
 
     subgraph MLP[ML build]

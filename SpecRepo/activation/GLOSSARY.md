@@ -2,7 +2,6 @@
 
 Acronyms are also spelled out on first use in each file. Terms marked with a star are explained in more depth in the file named.
 
-| Survivorship | Choosing which value survives into the golden record when several source records for one person disagree, by rules such as most trusted source, then most recent |
 | Term | Meaning |
 |---|---|
 | ABAC | Attribute-based access control: access granted by data tags and the user's attributes, not table by table |
@@ -32,6 +31,7 @@ Acronyms are also spelled out on first use in each file. Terms marked with a sta
 | SCD type 2 | Slowly changing dimension type 2: history kept as effective-dated rows |
 | SFMC | Salesforce Marketing Cloud |
 | SLA / SLO | Service level agreement / objective: a promised freshness, quality or response time |
+| Survivorship | Choosing which value survives into the golden record when several source records for one person disagree, by rules such as most trusted source, then most recent |
 | TCPA | Telephone Consumer Protection Act: consent rules for calls and texts |
 | Uplift ★ | The extra response caused by contacting someone, measured against a randomized holdout; separates persuadables from people who would buy anyway ([05_ML.md](./05_ML.md), model 6) |
 | XDM | Experience Data Model, AEP's schema standard |

@@ -84,6 +84,8 @@ flowchart LR
     class AUD,FAC fed
 ```
 
+**What the profile holds, and why federated audiences are drawn separately.** The AEP Real-Time Profile holds, per person: identities (EPID, ECID, CRM ID, hashed email), approved attributes (state, age band, holdings summary, assigned advisor, lifecycle stage), consent and preferences, nightly scores and top action, recent events, and membership of AEP-evaluated segments. Federated audiences are drawn separately because their logic needs data deliberately kept out of AEP, such as full household graphs, advisor books and policy history. The SQL runs in Databricks, and FAC brings back only the member list and hands it to Destinations.
+
 ### What the Browser Sends to Edge
 
 This call is separate from the page fetch and happens after it. The browser first GETs the HTML from the company's own web server or CDN; Adobe is not involved. Once the page loads, the Adobe Web SDK (JavaScript on the page) sends one small JSON event per page view or action to Adobe's Edge Network as a POST. That one call does two things. It is a synchronous request for any personalization decision, which Edge answers in tens of milliseconds while the page briefly hides the slot it will fill. It is also an event stream: Edge writes the raw event into an AEP dataset and the Real-Time Profile in the background, and the same events are exported to Bronze. (A server-side option exists, where the web server calls the Edge Server API during the GET, but it is not the default here.) Example for a quote start:

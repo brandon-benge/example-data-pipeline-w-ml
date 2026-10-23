@@ -8,9 +8,9 @@ Get a certified audience, with the right attributes and the right consent, into 
 
 | Destination | Connection | Identity sent | Use |
 |---|---|---|---|
-| Marketo Engage | AEP Marketo destination (person create or update, static list membership) | Email plus `EPID` as a custom field | Advisor programs, workplace and B2B-style nurture |
-| Salesforce Marketing Cloud | AEP SFMC destination (API) or file export to data extensions **(verify which the tenant licenses)** | Subscriber key = `EPID`, plus email and mobile | Consumer email, SMS, onboarding, cross-sell |
-| Salesforce CRM | AEP Salesforce CRM destination or Databricks to CRM sync | `crm_contact_id` | Advisor tasks, lead creation, next best action on the record |
+| Marketo Engage | Adobe Experience Platform (AEP) Marketo destination (person create or update, static list membership) | Email plus `EPID` as a custom field | Advisor programs, workplace and B2B-style nurture |
+| Salesforce Marketing Cloud | AEP Salesforce Marketing Cloud (SFMC) destination (API) or file export to data extensions **(verify which the tenant licenses)** | Subscriber key = `EPID`, plus email and mobile | Consumer email, SMS, onboarding, cross-sell |
+| Salesforce customer relationship management (CRM) | AEP Salesforce CRM destination or Databricks to CRM sync | `crm_contact_id` | Advisor tasks, lead creation, next best action on the record |
 | Paid media | AEP destinations for major ad platforms | Hashed email or phone only | Acquisition, seed audiences, suppression of existing customers |
 | Web personalization | Edge segments with Adobe Target or the site's decisioning | `ECID` | On-site offers |
 | Cloud storage | AEP dataset or audience export | `EPID` | Direct mail vendor, analytics exports |
@@ -147,7 +147,7 @@ For the exception path (Databricks direct to a non-AEP target), a **policy check
 
 ## 8. Monitoring
 
-Every destination run writes a record with audience ID and version, destination, start and end, members exported, failures, policy decision and taxonomy key. Dashboards show freshness against SLA, failure rates, blocks by policy, and daily count reconciliation by destination.
+Every destination run writes a record with audience ID and version, destination, start and end, members exported, failures, policy decision and taxonomy key. Dashboards show freshness against service level agreement (SLA), failure rates, blocks by policy, and daily count reconciliation by destination.
 
 ## 9. Interview Talk Track (2 minutes)
 

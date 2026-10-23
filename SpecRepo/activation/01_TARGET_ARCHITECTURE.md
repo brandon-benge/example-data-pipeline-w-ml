@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-The architecture has six layers. Databricks owns the durable, governed, heavy computation. AEP owns the real-time profile, low-latency segmentation and the activation fabric. Marketo, SFMC and the CRM are execution channels. Every layer writes evidence back to the lakehouse so measurement and governance see the whole loop.
+The architecture has six layers. Databricks owns the durable, governed, heavy computation. Adobe Experience Platform (AEP) owns the real-time profile, low-latency segmentation and the activation fabric. Marketo, Salesforce Marketing Cloud (SFMC) and the customer relationship management (CRM) are execution channels. Every layer writes evidence back to the lakehouse so measurement and governance see the whole loop.
 
 ```mermaid
 flowchart LR
@@ -76,14 +76,14 @@ The rule of thumb: **Databricks computes, AEP serves.** AEP should not become a 
 | Concern | Databricks | AEP | Why |
 |---|---|---|---|
 | Raw and history | Bronze, full history, replayable | Only what profile and segmentation need, with TTLs | Storage cost and AEP profile-richness limits |
-| Identity | Offline graph build, survivorship, household and advisor edges, MDM reconciliation | Identity Service graph for real-time stitching (ECID to CRM ID) | Complex matching needs SQL, Spark and audit; real-time stitching needs to be at the edge |
+| Identity | Offline graph build, survivorship, household and advisor edges, master data management (MDM) reconciliation | Identity Service graph for real-time stitching (ECID to CRM ID) | Complex matching needs SQL, Spark and audit; real-time stitching needs to be at the edge |
 | Profile attributes | Golden record, computed traits, scores | Serving copy of approved attributes | Single source, small serving footprint |
 | Behavioral events | All events, long retention | Recent events for streaming segments | Streaming segments need events in AEP |
 | Segmentation | Complex, heavy or warehouse-only logic (composed audiences) | Real-time and streaming segments, edge segments | Use each where it is strong |
-| ML | Feature engineering, training, batch scoring, registry | Score attributes on the profile; Customer AI where licensed | AEP Data Science Workspace is no longer sold; custom ML belongs in Databricks |
+| Machine learning (ML) | Feature engineering, training, batch scoring, registry | Score attributes on the profile; Customer AI where licensed | AEP Data Science Workspace is no longer sold; custom ML belongs in Databricks |
 | Activation | Governed exception path for bulk files to non-AEP targets | Primary path to all channels | One policy enforcement point |
 | Measurement | Joins sends, exposures, journeys and outcomes | Source of segment and journey events | Analysts need the joined picture |
-| Governance | Unity Catalog tags, ABAC, lineage | Data usage labels, marketing actions, consent policies | Enforced in both, from one label taxonomy (file 07) |
+| Governance | Unity Catalog tags, attribute-based access control (ABAC), lineage | Data usage labels, marketing actions, consent policies | Enforced in both, from one label taxonomy (file 07) |
 
 ## 3. Integration Paths
 
@@ -147,7 +147,7 @@ Restricted domains (underwriting, claims, health) live in a separate catalog wit
 |---|---|---|---|
 | Edge | Personalize the next page view | AEP edge segment | Under 100 ms at the edge |
 | Streaming | Abandoned quote, call back within the hour | AEP streaming segment, streaming destination | Minutes |
-| Daily | Cross-sell, lifecycle, advisor book refresh | AEP batch segment or FAC | Ready by 7 a.m. local |
+| Daily | Cross-sell, lifecycle, advisor book refresh | AEP batch segment or Federated Audience Composition (FAC) | Ready by 7 a.m. local |
 | Weekly or ad hoc | Model-driven campaigns, direct mail | FAC or governed reverse ETL | By planned send date |
 
 ## 7. Key Tradeoffs

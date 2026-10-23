@@ -2,18 +2,18 @@
 
 ## 1. Purpose
 
-Make audiences certified, reusable data products instead of one-off queries. A marketer should be able to pick "new parents without term life, consented for email, not in an advisor's active pipeline" from a catalog, see its size and freshness, and send it to Marketo or SFMC the same day.
+Make audiences certified, reusable data products instead of one-off queries. A marketer should be able to pick "new parents without term life, consented for email, not in an advisor's active pipeline" from a catalog, see its size and freshness, and send it to Marketo or Salesforce Marketing Cloud (SFMC) the same day.
 
 ## 2. Audience Types
 
 | Type | Example | Typical home |
 |---|---|---|
-| Attribute | Policyholders aged 55 to 64 with a 401(k) rollover window | AEP batch |
+| Attribute | Policyholders aged 55 to 64 with a 401(k) rollover window | Adobe Experience Platform (AEP) batch |
 | Behavioral | Started a term quote in the last 2 hours and did not finish | AEP streaming |
 | Lifecycle | Day 30 after policy issue (onboarding) | AEP batch or journey entry |
 | Model-driven | Top two deciles of annuity propensity (file 05) | AEP batch on a score attribute |
 | Relationship | Households where any member holds group life through an employer but no member has individual life | Databricks, federated (Path B) |
-| Advisor book | Clients of advisors in the Northeast region with no review in 18 months | Databricks, federated, to Marketo or CRM |
+| Advisor book | Clients of advisors in the Northeast region with no review in 18 months | Databricks, federated, to Marketo or customer relationship management (CRM) |
 | Suppression | Deceased, legal hold, do-not-contact, recent complaint, open claim flag | Databricks, applied everywhere |
 | Lookalike or seed | Paid media seed of recent issued-policy owners | AEP batch to paid destinations, or a clean room |
 
@@ -58,14 +58,14 @@ Each audience is a YAML file in a repo, reviewed like code. The full example is 
 | `owner`, `steward` | Someone is accountable for correctness and retirement |
 | `marketing_action` | Declared purpose, checked against data usage labels before publish |
 | `compute_path` | `aep_streaming`, `aep_batch`, `aep_edge`, `federated`, `databricks_exception` |
-| `logic.pql` or `logic.sql` | The definition; PQL for AEP, SQL for Databricks |
+| `logic.pql` or `logic.sql` | The definition; Profile Query Language (PQL) for AEP, SQL for Databricks |
 | `requires_consent` | Channels the audience will be used on; enforced at activation, not baked into the logic |
 | `suppressions` | References to shared suppression audiences, never copied logic |
 | `expected_size` | Range used as a test; a size outside the range blocks promotion |
 | `destinations` | Allowed destinations, so a consumer audience can't be mapped to an advisor channel by accident |
 | `expires_on` | Forces review; campaign-specific audiences retire themselves |
 
-### CI checks on every change
+### Continuous integration (CI) checks on every change
 
 1. Schema validation of the YAML.
 2. Label check: no field referenced by the logic carries a label that conflicts with `marketing_action` (file 07).
@@ -109,7 +109,7 @@ Example: `cns_xsell_life_new_parents_v3`. The same key appears in the AEP audien
 Suppressions are shared audiences applied in a fixed order. A campaign can add suppressions but cannot remove a higher-level one.
 
 1. **Global hard stops:** deceased, legal hold, fraud flag, global do-not-contact.
-2. **Regulatory:** channel opt-outs, TCPA consent missing for calls or texts, state-specific restrictions.
+2. **Regulatory:** channel opt-outs, Telephone Consumer Protection Act (TCPA) consent missing for calls or texts, state-specific restrictions.
 3. **Customer care:** open complaint, open claim, recent bereavement. These are minimal yes or no flags produced inside the restricted zone. The detail never leaves it. Legal approves each flag's definition.
 4. **Business:** in an advisor's active sales pipeline, contacted in the last N days (cross-channel frequency cap), employees and advisors for consumer offers.
 5. **Campaign-specific:** holdout and control groups (file 07).
@@ -132,7 +132,7 @@ Each certified audience publishes:
 
 - Membership table in `audiences.segment_membership` with `enterprise_person_id`, `audience_id`, `version`, `entered_at`, `exited_at`.
 - Daily `audiences.audience_snapshot` for point-in-time analysis, so analysts can ask "who was in this audience on the day of the send".
-- Freshness SLA, size, owner and a link to the YAML in the catalog.
+- Freshness service level agreement (SLA), size, owner and a link to the YAML in the catalog.
 
 That snapshot table is what makes audiences useful to analytics, not just to channels: it is the treatment definition for measurement and the population definition for models.
 

@@ -4,7 +4,7 @@
 
 Benge Software LLC sells practical software for AI-assisted engineering. Its first product, **MakeItOurs**, turns plain-language requests into parametric CAD changes that are validated, previewed in 3D, versioned in Git and exported (STEP, IFC4, GLB and others). Its users are homeowners, DIY builders, small builders and designers. It is pre-launch, with Mac and iPhone apps in testing, and more products are planned.
 
-This file applies the enterprise design to that business at a founder's budget. The logical architecture stays the same. The tools get smaller, and AEP's role is played by tables in the lakehouse plus a small activation worker.
+This file applies the enterprise design to that business at a founder's budget. The logical architecture stays the same. The tools get smaller, and Adobe Experience Platform (AEP)'s role is played by tables in the lakehouse plus a small activation worker.
 
 Event names and lifecycle stages below are proposals. They should be checked against what the product actually emits before anything is built.
 
@@ -15,8 +15,8 @@ Event names and lifecycle stages below are proposals. They should be checked aga
 | AEP Identity Service and Real-Time Profile | `identity` and `profile` tables built by dbt or Spark from this repo's Silver layer; a small Postgres table for lookups | Two graphs, stable IDs, merge and split events |
 | AEP segmentation | Segment YAML compiled to dbt models | Segments as code, owners, expected size, expiry |
 | AEP destinations and policy engine | An activation worker (or a reverse ETL tool) with a policy check | Consent at send time, labels, send log |
-| Marketo (B2B) | A lightweight CRM for builders and designers | Upstream audiences, taxonomy key |
-| SFMC (B2C) | One lifecycle email and in-app messaging tool | Upstream audiences, taxonomy key |
+| Marketo (B2B) | A lightweight customer relationship management (CRM) for builders and designers | Upstream audiences, taxonomy key |
+| Salesforce Marketing Cloud (SFMC) (B2C) | One lifecycle email and in-app messaging tool | Upstream audiences, taxonomy key |
 | Databricks | This repo's lakehouse (Iceberg, Spark, dbt, Trino) until volume justifies a managed platform | Unity-Catalog-style labels in YAML |
 | MLflow models | Rules first; simple models later, tracked in the sibling `example-model-routing` repo | Scores as data products |
 
@@ -122,7 +122,7 @@ This is the most important rule for this instance, and it is a trust differentia
 | `mio_grow_invited_not_joined_v1` | Invited 7 days ago, not joined | Reminder to the inviter, not the invitee, until the invitee consents |
 | `multi_acq_waitlist_next_product_v1` | Active MakeItOurs users matching the next product's persona | Cross-product launch |
 
-## 9. ML Path
+## 9. Machine Learning (ML) Path
 
 1. **Rules now.** Lifecycle stages and the audiences above.
 2. **First models when there is volume:** activation propensity (will a new user export within 7 days?), churn risk for subscribers, and product-qualified lead scoring for builders and designers.

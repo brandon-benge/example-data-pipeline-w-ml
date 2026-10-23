@@ -4,7 +4,7 @@
 
 | Window | Focus | Concrete outputs |
 |---|---|---|
-| Days 1 to 30: listen and baseline | Meet Marketing, Analytics, EDO, Technology, Privacy, Legal and Distribution. Inventory sources, AEP schemas, audiences, destinations and list-pull requests | Current-state map; top 20 list pulls by volume; baseline metrics (time to audience, duplicate rate, share of sends with a taxonomy key) |
+| Days 1 to 30: listen and baseline | Meet Marketing, Analytics, Enterprise Data Office (EDO), Technology, Privacy, Legal and Distribution. Inventory sources, Adobe Experience Platform (AEP) schemas, audiences, destinations and list-pull requests | Current-state map; top 20 list pulls by volume; baseline metrics (time to audience, duplicate rate, share of sends with a taxonomy key) |
 | Days 31 to 60: decide and prove | Identity proof of concept kickoff (file 02, section 10); certify the first three audiences as code; agree the label taxonomy with Privacy | Bake-off golden set; three certified audiences live with shadow evaluation; signed label-to-policy table |
 | Days 61 to 90: ship and show | Taxonomy key required on all new sends; first closed-loop readout on one program with a holdout; data product portfolio and prioritization agreed | One program measured end to end; portfolio roadmap for the next two quarters |
 

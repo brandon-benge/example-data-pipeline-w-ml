@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-Issue one durable `enterprise_person_id` for every real person the company knows about, in any role, and keep it stable as records arrive, change, merge and split. Model households and advisor relationships as typed edges between those people. Serve the result in two ways: an offline graph in Databricks that is the system of record, and a real-time path through AEP Identity Service and a lookup API.
+Issue one durable `enterprise_person_id` for every real person the company knows about, in any role, and keep it stable as records arrive, change, merge and split. Model households and advisor relationships as typed edges between those people. Serve the result in two ways: an offline graph in Databricks that is the system of record, and a real-time path through Adobe Experience Platform (AEP) Identity Service and a lookup API.
 
 ## 2. Two Graphs, Not One
 
@@ -104,11 +104,11 @@ Advisors are people too. An advisor who also owns a policy has one `enterprise_p
 
 | Namespace | Example source | Strength | Normalization before hashing | Notes |
 |---|---|---|---|---|
-| `mdm_party_id` | Enterprise MDM | Hard key | none | Treated as authoritative when present |
+| `mdm_party_id` | Enterprise master data management (MDM) | Hard key | none | Treated as authoritative when present |
 | `crm_contact_id` | Salesforce | Hard key within source | none | Becomes the AEP `CRMID` namespace |
 | `policy_owner_key` | Policy admin (policy number + role) | Hard key for owners | upper-case, strip separators | Never sent to AEP raw |
 | `ssn_token` | Policy admin, restricted zone | Hard key | digits only, tokenized in restricted catalog | Used for matching only; never leaves the restricted catalog; only edges derived from it are published |
-| `email_sha256` | Web forms, CRM, Marketo, SFMC | Strong, shareable | trim, lower-case, provider-specific dot and plus handling | Watch for advisor and household sharing |
+| `email_sha256` | Web forms, customer relationship management (CRM), Marketo, Salesforce Marketing Cloud (SFMC) | Strong, shareable | trim, lower-case, provider-specific dot and plus handling | Watch for advisor and household sharing |
 | `phone_sha256` | CRM, call center | Medium, shareable | E.164 | Landlines are often household-level |
 | `ecid` | AEP Web SDK | Device or browser | none | Anonymous until an authenticated event links it |
 | `npn` / `crd` | Licensing feeds | Hard key for advisors | digits only | Public regulator identifiers for producers and registered reps |
@@ -121,7 +121,7 @@ Rules are tiered. A higher tier wins, and lower tiers are not allowed to overrid
 | Tier | Rule | Edge type | Auto-link? |
 |---|---|---|---|
 | T0 | Same `mdm_party_id` | same_person | yes |
-| T1 | Same `ssn_token` and same DOB | same_person | yes |
+| T1 | Same `ssn_token` and same date of birth (DOB) | same_person | yes |
 | T1 | Same `policy_owner_key` across admin systems | same_person | yes |
 | T2 | Same `email_sha256` and same normalized last name, with email cardinality ≤ 2 | same_person | yes |
 | T2 | Authenticated web event carrying `crm_contact_id` and `ecid` | same_person (device) | yes |
@@ -252,7 +252,7 @@ The Enterprise Data Office's MDM remains the system of record for the party mast
 | MDM to spine | Party ID, golden legal attributes, party relationships | Daily or CDC feed; `mdm_party_id` is a T0 key |
 | Spine to MDM | Digital identifiers, proposed matches MDM does not have, and conflicts | Weekly match-suggestion feed into the MDM steward workflow |
 | Disagreement | MDM says two parties, spine says one (or the reverse) | MDM wins for hard keys; the case is logged and reviewed jointly |
-| Ownership | Spine owns digital and marketing identifiers and households for marketing | Agreed in a RACI with the EDO |
+| Ownership | Spine owns digital and marketing identifiers and households for marketing | Agreed in a responsible, accountable, consulted, informed (RACI) with the Enterprise Data Office (EDO) |
 
 ## 10. Build vs. Buy
 

@@ -1,4 +1,4 @@
-# CRM Buildout
+# Customer Relationship Management (CRM) Buildout
 
 ## 1. Purpose
 
@@ -10,12 +10,12 @@ Assumed platform: Salesforce with the Financial Services Cloud data model (perso
 
 | Fact | System of record | CRM role |
 |---|---|---|
-| Who a person is (`enterprise_person_id`) | Identity spine (Databricks) and MDM | Stores the ID on the person record; never merges on its own |
+| Who a person is (`enterprise_person_id`) | Identity spine (Databricks) and master data management (MDM) | Stores the ID on the person record; never merges on its own |
 | What a person holds | Policy admin systems | Read-only summary synced from the lakehouse |
 | Advisor licensing and hierarchy | Distribution and licensing systems | Read-only producer records |
 | Leads, opportunities, activities | **CRM** | Owns them |
 | Consent and preferences | Consent platform, exposed in the profile | Read, plus capture of verbal consent through a controlled flow |
-| Scores and NBA | `ml.scores`, `ml.nba_ranked_actions` | Displayed with reason codes; advisor feedback captured |
+| Scores and next best action (NBA) | `ml.scores`, `ml.nba_ranked_actions` | Displayed with reason codes; advisor feedback captured |
 
 ## 3. Data Model
 
@@ -131,7 +131,7 @@ flowchart LR
 
 - **Into Salesforce:** a sync job (Databricks to Salesforce bulk API, or a reverse ETL tool) upserts person, household and policy summary records keyed on `enterprise_person_id`, and writes recommendations daily. It goes through the same policy check as other exception-path activations, because the CRM is a destination.
 - **Out of Salesforce:** change data capture into Bronze, through a managed connector such as Databricks Lakeflow Connect's Salesforce connector or Salesforce CDC events **(verify the connector choice with the platform team)**.
-- **Marketo and SFMC:** native connectors stay for operational sync (lead handoff and status in Marketo, subscriber context in SFMC). Audiences still come from upstream (file 04).
+- **Marketo and Salesforce Marketing Cloud (SFMC):** native connectors stay for operational sync (lead handoff and status in Marketo, subscriber context in SFMC). Audiences still come from upstream (file 04).
 
 ## 5. Lead Lifecycle and Routing
 
@@ -161,7 +161,7 @@ Routing rules, in order:
 2. Otherwise, use the lead-to-advisor matching model (file 05, model 9) among eligible advisors, subject to capacity and fairness constraints.
 3. Leads below a score threshold go to inside sales or nurture rather than to advisors, which protects advisor trust in the leads they receive.
 
-Service levels: first contact attempt within 1 business hour for high-score leads and within 1 business day for others. Each SLA miss is measured, because time to first contact is one of the strongest conversion drivers and a lever marketing can't pull by itself.
+Service levels: first contact attempt within 1 business hour for high-score leads and within 1 business day for others. Each service level agreement (SLA) miss is measured, because time to first contact is one of the strongest conversion drivers and a lever marketing can't pull by itself.
 
 ## 6. Offline Outcome Capture
 
@@ -183,7 +183,7 @@ These rows land in `measurement.outcome` with the event date and a restatement f
 | Phase | Scope | Exit criteria |
 |---|---|---|
 | 1. Foundation | `EPID` on person accounts, household and policy summaries synced, duplicate cleanup | Under 2% duplicate person accounts; every active client has an `EPID` |
-| 2. Leads | Lead intake from all sources, enrichment, routing, SLAs, Marketo sync | 100% of leads with `campaign_key`; SLA dashboard live |
+| 2. Leads | Lead intake from all sources, enrichment, routing, service level agreements (SLAs), Marketo sync | 100% of leads with `campaign_key`; SLA dashboard live |
 | 3. Outcomes | `application_id` on opportunities, policy admin outcomes joined | 90% of issued policies traced to a lead or campaign touch within 90 days, or flagged as advisor-originated |
 | 4. Intelligence | Scores and NBA recommendations with reason codes; feedback capture | Advisor acceptance rate tracked; holdout lift measured |
 | 5. Expansion | Distribution and service use cases beyond marketing | Self-serve access with the same governance (file 07) |

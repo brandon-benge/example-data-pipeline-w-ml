@@ -8,9 +8,9 @@ Move marketing from one-off list pulls to one governed, identity-resolved, activ
 
 The "before" state this design replaces:
 
-- Each campaign starts with a list pull from a warehouse query or CRM report. The logic lives in someone's SQL file, and two teams pulling "active policyholders" get two different counts.
+- Each campaign starts with a list pull from a warehouse query or customer relationship management (CRM) report. The logic lives in someone's SQL file, and two teams pulling "active policyholders" get two different counts.
 - Customer records are fragmented across policy admin, CRM, agency or advisor systems, web analytics and email platforms. No key joins them reliably.
-- Marketo and SFMC each hold their own copy of audiences and their own naming, so cross-channel suppression and frequency rules are manual.
+- Marketo and Salesforce Marketing Cloud (SFMC) each hold their own copy of audiences and their own naming, so cross-channel suppression and frequency rules are manual.
 - Consent and purpose rules are applied by hand at export time, if at all.
 - Offline outcomes, such as a policy issued six weeks after an email, never make it back to the campaign that drove them.
 
@@ -21,10 +21,10 @@ The "before" state this design replaces:
 | Person | Prospect, policyholder, beneficiary, household member | Homeowner, DIY builder | One profile, consistent treatment, respected consent |
 | Professional | Financial advisor or agent | Small builder or designer | A clean book of business, warm leads, visibility into marketing touches |
 | Marketer | Consumer and advisor marketing teams | Founder doing growth | Self-serve audiences and journeys, no data prep |
-| Data product owner | Owner of a certified dataset or audience | Founder | Clear contracts, SLAs, adoption metrics |
-| Data science | Propensity and NBA models | Activation and churn scoring | Point-in-time features, a path to production |
+| Data product owner | Owner of a certified dataset or audience | Founder | Clear contracts, service level agreements (SLAs), adoption metrics |
+| Data science | Propensity and next best action (NBA) models | Activation and churn scoring | Point-in-time features, a path to production |
 | Steward, Privacy, Legal | Enterprise Data Office, Privacy Office | Founder plus outside counsel | Enforced purpose limitation, audit trail |
-| Analytics | MMM, attribution, incrementality | Funnel and cohort analysis | Clean, joined outcome signal |
+| Analytics | Marketing mix model (MMM), attribution, incrementality | Funnel and cohort analysis | Clean, joined outcome signal |
 
 ## 4. The Two-Sided Model
 
@@ -69,7 +69,7 @@ These hold across every file in this folder. A design choice that would break on
 3. **Purpose is checked by the platform, not by the person exporting.** Every dataset and field that can reach an audience has a usage label. Every destination declares its marketing action. Activation fails closed when they conflict.
 4. **Consent is evaluated at send time.** Consent captured after an audience is built still wins.
 5. **Segments are code.** Each audience definition is versioned, reviewed and has an owner. A UI-built segment is promoted to code before it becomes a certified data product.
-6. **The lakehouse is the system of record for derived data.** AEP holds a serving copy of what it needs for real-time use. Anything computed in AEP that matters later, such as segment membership or journey events, flows back to the lakehouse.
+6. **The lakehouse is the system of record for derived data.** Adobe Experience Platform (AEP) holds a serving copy of what it needs for real-time use. Anything computed in AEP that matters later, such as segment membership or journey events, flows back to the lakehouse.
 7. **Outcomes close the loop.** Every activation writes a send or exposure record with a campaign taxonomy key, so later outcomes can be joined back to it.
 8. **Restricted data never enters the marketing profile.** Underwriting, health and claims detail stay in separate datasets with no marketing labels and no path to the profile.
 
@@ -87,6 +87,6 @@ These hold across every file in this folder. A design choice that would break on
 
 ## 7. Non-Goals
 
-- Replacing the Enterprise Data Office's MDM. This design consumes the MDM golden record where one exists and feeds match evidence back to it.
+- Replacing the Enterprise Data Office's master data management (MDM). This design consumes the MDM golden record where one exists and feeds match evidence back to it.
 - Building a custom CDP. AEP stays the real-time profile and activation hub for the enterprise instance.
 - Building production models in this spec. File 05 defines the contract and path, not the model internals.

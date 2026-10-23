@@ -2,13 +2,19 @@
 
 ## 1. Overview
 
-The architecture has six layers. Databricks owns the durable, governed, heavy computation. Adobe Experience Platform (AEP) owns the real-time profile, low-latency segmentation and the activation fabric. Marketo, Salesforce Marketing Cloud (SFMC) and the customer relationship management (CRM) are execution channels. Every layer writes evidence back to the lakehouse so measurement and governance see the whole loop.
+The architecture has six layers. Databricks owns the durable, governed, heavy computation. Adobe Experience Platform (AEP) owns the real-time profile, low-latency segmentation and the activation fabric. Marketo, Salesforce Marketing Cloud (SFMC) and the Salesforce customer relationship management (CRM) system are execution channels. Every layer writes evidence back to the lakehouse so measurement and governance see the whole loop.
+
+The design has two paths, shown separately in sections 1.2 and 1.3:
+
+- **The build path** runs on a schedule in Databricks. It resolves identity, builds the golden profile, trains and registers models, scores people in batch, and publishes identities, profiles and scores to the serving stores.
+- **The serving path** runs per event or request. It resolves who the person is, reads their profile and scores (or scores them in real time), decides the next action, checks policy and consent, and acts in a channel.
+
+### 1.1 Layer View
 
 ```mermaid
 flowchart LR
     subgraph SRC[1. Sources]
         PAS[(Policy admin)]
-        CRM[(CRM / advisor desktop)]
         AGY[(Agency and distribution)]
         WEB[Web and app via Edge SDK]
         CC[(Call center)]
@@ -20,54 +26,188 @@ flowchart LR
         SV[Silver conformed]
         IDG[Identity graph build]
         GOLD[Gold profile core and data products]
-        FEAT[Feature tables]
-        ML[MLflow models and scores]
+        MLB[Features, training, registry, batch scores]
         AUD[Composed audiences]
         MEAS[Measurement marts]
     end
 
-    subgraph AEP[Adobe Experience Platform]
-        IDS[Identity Service]
-        RTCP[Real-Time Customer Profile]
-        SEG[Segmentation: batch, streaming, edge]
-        FAC[Federated Audience Composition]
-        DEST[Destinations]
-        AJO[Journey Optimizer - optional]
+    subgraph RT[Real-time serving]
+        IDS[AEP Identity Service]
+        RTCP[AEP Real-Time Customer Profile]
+        MSV[Databricks Model Serving and online features]
+        DEC[Decisioning: NBA and segment qualification]
+        FAC[AEP Federated Audience Composition]
+        DEST[AEP Destinations]
     end
 
     subgraph CH[Channels]
-        MKTO[Marketo Engage - advisor and B2B]
-        SFMC[SFMC - consumer]
-        SFDC[Salesforce CRM]
+        MKTO[Marketo Engage - advisor and B2B programs]
+        SFMC[Salesforce Marketing Cloud - consumer email and SMS]
+        SFDC[Salesforce CRM - advisor workspace]
         PAID[Paid media]
         SITE[Web personalization]
     end
 
     PAS --> BR
-    CRM --> BR
     AGY --> BR
     CC --> BR
     TP --> BR
     WEB -- "streaming XDM" --> IDS
     WEB -- "raw events copy" --> BR
     BR --> SV --> IDG --> GOLD
-    SV --> FEAT --> ML --> GOLD
-    GOLD -- "Delta Sharing or batch ingest" --> RTCP
-    IDG -- "identity map" --> IDS
-    IDS --> RTCP --> SEG --> DEST
+    SV --> MLB --> GOLD
+    IDG -- "EPID and deterministic IDs" --> IDS
+    GOLD -- "profile and scores" --> RTCP
+    MLB -- "deploy champion model" --> MSV
+    IDS --> RTCP --> DEC
+    MSV --> DEC
+    DEC --> DEST
     GOLD --> AUD -- "federated" --> FAC --> DEST
-    AJO --- RTCP
     DEST --> MKTO
     DEST --> SFMC
     DEST --> SFDC
     DEST --> PAID
-    SEG -- "edge" --> SITE
+    DEC -- "edge" --> SITE
+    SFDC <-- "Marketing Cloud Connect" --> SFMC
+    SFDC <-- "native sync" --> MKTO
     MKTO -- "sends, opens, MQLs" --> BR
     SFMC -- "sends, opens, clicks" --> BR
-    SFDC -- "opportunities, policies issued" --> BR
+    SFDC -- "leads, opportunities, activities" --> BR
     RTCP -- "profile and segment export" --> BR
     GOLD --> MEAS
 ```
+
+### 1.2 Build Path
+
+Everything here runs on a schedule, is replayable from Bronze, and publishes versioned outputs. Nothing on this path is in the request path of a customer interaction.
+
+```mermaid
+flowchart LR
+    subgraph IN[Inputs]
+        BR[Bronze and Silver]
+        OUT[Outcomes and experiment assignments]
+    end
+
+    subgraph ID[Identity build]
+        MATCH[Match and cluster]
+        XREF[person_xref and id_change]
+        SURV[Survivorship]
+        PC[profile.person_core]
+    end
+
+    subgraph MLP[ML build]
+        FT[Feature tables, timestamp keyed]
+        LB[Label tables]
+        TR[Training and evaluation in MLflow]
+        REG[Unity Catalog model registry: champion and challenger]
+        APPR[Model review and approval]
+        BS[Batch scoring job]
+        SC[ml.scores and ml.nba_ranked_actions]
+    end
+
+    subgraph PUB[Publish to serving stores]
+        IDS[AEP Identity Service]
+        UPS[AEP Real-Time Profile]
+        LKP[Identity lookup store]
+        OFS[Online feature store]
+        EP[Model Serving endpoint]
+    end
+
+    BR --> MATCH --> XREF --> SURV --> PC
+    BR --> FT
+    PC --> FT
+    OUT --> LB
+    FT --> TR
+    LB --> TR
+    TR --> REG --> APPR
+    APPR -- "approved version" --> BS
+    FT --> BS
+    BS --> SC
+    APPR -- "approved version" --> EP
+    XREF -- "EPID plus deterministic IDs" --> IDS
+    XREF --> LKP
+    PC -- "Delta Sharing or batch" --> UPS
+    SC -- "score field group" --> UPS
+    FT -- "sync" --> OFS
+```
+
+| Stage | Cadence | Output | Gate before publish |
+|---|---|---|---|
+| Identity build | Incremental every few hours, full weekly | `person_xref`, `id_change`, `person_core` | Incremental vs. full diff under threshold; no giant clusters |
+| Feature build | Daily, plus streaming features where needed | Timestamp-keyed feature tables | Freshness and null-rate checks |
+| Training | On schedule (for example monthly) or on drift alert | MLflow run with data versions and metrics | Beats current champion on out-of-time validation |
+| Registry | Per approved version | Unity Catalog model version with aliases `champion` and `challenger` | Model card, fairness checks, risk-tier sign-off (file 05, section 6) |
+| Batch scoring | Daily by 05:00 | `ml.scores`, `ml.nba_ranked_actions` | Score contract tests ([examples/score_contract.yaml](./examples/score_contract.yaml)) |
+| Publish | After each gate passes | AEP identities and profile attributes, lookup store, online features, serving endpoint | Label check: scores inherit input labels |
+
+### 1.3 Serving Path
+
+This runs per event or request. Most decisions use the batch scores already on the profile. A small set of moments (web visit, call center screen pop, quote abandonment) score in real time because the answer depends on what just happened.
+
+```mermaid
+flowchart LR
+    EV[Event or request: web, app, call center, streaming event] --> EDGE[AEP Edge Network or API gateway]
+    EDGE --> IDR[Resolve identity: AEP Identity Service or Identity Lookup API]
+    IDR --> PRF[Read profile: attributes, consent, batch scores]
+    PRF --> Q{Does the decision need a fresh score?}
+    Q -- "no, most cases" --> USE[Use stored batch score]
+    Q -- "yes" --> RTS[Real-time score: Model Serving with online features]
+    USE --> DEC[Decide: segment qualification and NBA arbitration]
+    RTS --> DEC
+    DEC --> GATE[Policy, consent and contact-frequency gates]
+    GATE -- "allowed" --> ACT[Act: SFMC journey, Marketo program, CRM task, web offer]
+    GATE -- "blocked" --> NONE[No action, reason logged]
+    ACT --> LOG[Decision and send log: EPID, model version, score, action, taxonomy key]
+    NONE --> LOG
+    LOG -. "back to Bronze for monitoring and measurement" .-> EV
+```
+
+Real-time scoring, step by step, for a call center screen pop:
+
+```mermaid
+sequenceDiagram
+    participant CC as Call center desktop
+    participant LK as Identity Lookup API
+    participant P as AEP Real-Time Profile
+    participant NBA as NBA service on Model Serving
+    participant OF as Online feature store
+    participant G as Policy and consent check
+    participant L as Decision log
+    CC->>LK: resolve(phone_sha256)
+    LK-->>CC: EPID p42, household h7, advisor a3
+    CC->>P: Profile for p42 (consent, holdings summary, batch scores)
+    CC->>NBA: rank actions for p42 with call context
+    NBA->>OF: Fresh features for p42 (last 24h web activity, open service case flag)
+    NBA-->>CC: Ranked actions with reason codes and model version
+    CC->>G: Check top action against labels, consent, frequency
+    G-->>CC: Allowed: offer annuity review with advisor a3
+    CC->>L: Log decision, model version, score, taxonomy key
+```
+
+Where each serving component runs:
+
+| Step | Component | Latency target | Notes |
+|---|---|---|---|
+| Resolve identity | AEP Identity Service (web, app); Identity Lookup API (call center, CRM, server) | Under 50 ms at p99 for the lookup API | Both are fed by the same offline graph |
+| Read profile | AEP Real-Time Profile (edge projection for web) | Edge: under 100 ms | Batch scores are profile attributes |
+| Real-time score | Databricks Model Serving endpoint with the online feature store | Under 150 ms at p99 | Only for moments where recent behavior changes the answer |
+| Decide | NBA service (Model Serving) for web and call center; AEP segments and journeys for channel triggers | Under 200 ms for interactive moments | Ranking inside Adobe Journey Optimizer decisioning is an option if licensed **(verify)** |
+| Gate | AEP policy engine and consent for destinations; policy check service for direct calls | In line | Same label-to-policy table everywhere |
+| Act and log | Channel plus decision log | Asynchronous log | Model version on every logged decision makes monitoring and audit possible |
+
+### 1.4 Why SFMC and Salesforce CRM Appear Separately
+
+They come from the same vendor but are separate products with separate data stores, and they do different jobs here.
+
+| | Salesforce Marketing Cloud (SFMC) | Salesforce CRM (Sales, Service or Financial Services Cloud) |
+|---|---|---|
+| Job in this design | Sends consumer email, SMS and journeys at volume | The advisor's and service rep's workspace: contacts, households, leads, opportunities, tasks |
+| Data store | Its own tenant: subscribers and data extensions | Core Salesforce objects |
+| Who uses it | Consumer marketing | Advisors, inside sales, service |
+| AEP connection | Destination for consumer audiences | Destination for advisor tasks and lead updates; source of outcomes via change data capture |
+| Link between them | Marketing Cloud Connect syncs contacts and send results | Same connector, other direction |
+
+Keeping them as separate boxes matters because audiences go to SFMC for sending, while outcomes (leads, opportunities, applications) come back from the CRM. Treating them as one system is a common source of duplicate contacts and mismatched subscriber keys. If the company also licenses Salesforce Data Cloud, its overlap with AEP needs an explicit decision about which one owns the profile **(verify licensing)**.
 
 ## 2. What Lives Where
 

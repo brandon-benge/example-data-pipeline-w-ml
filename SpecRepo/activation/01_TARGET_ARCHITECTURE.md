@@ -61,9 +61,10 @@ flowchart LR
     GOLD -- "derived: profile and scores" --> RTCP
     MLB -- "derived: approved model" --> MSV
     MLB -- "derived: features, synced" --> OFS
-    OFS -- "features by EPID" --> MSV
     IDS --> RTCP --> DEC
-    MSV --> DEC
+    IDS -- "1. resolve EPID" --> MSV
+    OFS -- "2. features for that EPID" --> MSV
+    MSV -- "3. score" --> DEC
     DEC --> DEST
     GOLD --> AUD -- "same audience, no copy" --> FAC --> DEST
     DEST --> MKTO

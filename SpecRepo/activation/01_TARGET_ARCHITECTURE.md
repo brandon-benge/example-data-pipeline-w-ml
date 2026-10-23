@@ -125,6 +125,16 @@ This call is separate from the page fetch and happens after it. The browser firs
 
 Rule: raw behavioral events may stream into AEP; anything derived is written only by the Databricks build path. The same events are copied to Bronze, so the build path sees everything the serving path saw. AEP-side computation on those raw events is limited to what real-time use needs (identity stitching, streaming segment qualification, computed attributes over recent events), and its results are exported back to Bronze.
 
+**How one event reaches both AEP and Bronze.** Yes, one event with two consumers is the normal pattern. With the Adobe Web SDK, though, the fan-out happens at Adobe's Edge Network, not on a queue the company runs, because the SDK posts only to Edge. The datastream routes each event to AEP, and a second route copies it to the lakehouse:
+
+| Route to Bronze | How it works | Latency | Use it for |
+|---|---|---|---|
+| Event Forwarding (recommended) | Edge forwards each event, server side, to a company endpoint such as Kafka, Azure Event Hubs or Amazon Kinesis. A Bronze stream job consumes it. Separate Adobe license **(verify)** | Seconds | The main feed into Bronze |
+| AEP dataset export | AEP exports the raw event dataset to cloud storage on a schedule, and Auto Loader picks it up | Hours | A daily reconciliation that catches dropped events, and a fallback |
+| Company-owned collector first | The browser sends to the company's own collector, which puts the event on Kafka. One consumer writes Bronze and another calls the AEP streaming API | Seconds | Only when the company must own collection. It loses Edge's same-call personalization unless the page also calls Edge |
+
+Each event carries an event ID (`_id`), so Bronze removes duplicates and the daily export can be reconciled against the stream by count.
+
 The orange boxes are one federated audience: the SQL table in Databricks, and the AEP Federated Audience Composition (FAC) audience that reads it in place without copying it.
 
 ### 1.2 Build Path

@@ -121,7 +121,7 @@ This call is separate from the page fetch and happens after it. The browser firs
 | Data | Enters serving from | Why |
 |---|---|---|
 | Live web and app events, and the page or app request itself | The AEP Edge Network, as they happen | Needed to link an anonymous visitor to a known person at login, to qualify streaming segments such as quote abandonment, and to decide on the next page |
-| Identities (`EPID`), profile attributes, scores, audiences, models | **Only the build path** | One writer for derived data, so serving never computes its own version of the truth |
+| Identities (`EPID`), profile attributes, scores, audiences, models | **Only the build path** | One writer for derived data, so serving never computes its own version of the truth. How: the offline identity build stitches source records (CRM, policy admin, logins) into one person and issues the stable EPID; profile attributes, scores and audiences are then computed in Gold keyed by EPID and synced to AEP. At login, AEP only links the visitor's ECID to an existing CRM ID and EPID; it never creates a person |
 
 Rule: raw behavioral events may stream into AEP; anything derived is written only by the Databricks build path. The same events are copied to Bronze, so the build path sees everything the serving path saw. AEP-side computation on those raw events is limited to what real-time use needs (identity stitching, streaming segment qualification, computed attributes over recent events), and its results are exported back to Bronze.
 

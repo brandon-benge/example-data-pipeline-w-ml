@@ -2,6 +2,7 @@
 
 Acronyms are also spelled out on first use in each file. Terms marked with a star are explained in more depth in the file named.
 
+| Survivorship | Choosing which value survives into the golden record when several source records for one person disagree, by rules such as most trusted source, then most recent |
 | Term | Meaning |
 |---|---|
 | ABAC | Attribute-based access control: access granted by data tags and the user's attributes, not table by table |

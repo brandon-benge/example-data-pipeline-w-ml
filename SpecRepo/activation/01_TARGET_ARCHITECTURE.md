@@ -153,7 +153,7 @@ flowchart LR
     subgraph ID[Identity build]
         MATCH[Match and cluster]
         XREF["EPID lookup table and ID change log<br/>(person_xref, id_change)"]
-        SURV[Survivorship]
+        SURV[Survivorship: pick the best value per field]
         PC[profile.person_core]
     end
 

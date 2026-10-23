@@ -34,7 +34,8 @@ flowchart LR
     subgraph RT[Real-time serving]
         IDS[AEP Identity Service]
         RTCP[AEP Real-Time Customer Profile]
-        MSV[Databricks Model Serving and online features]
+        OFS[Online feature store]
+        MSV[Databricks Model Serving]
         DEC[Decisioning: NBA and segment qualification]
         FAC[Federated audience: AEP FAC reads it in place]
         DEST[AEP Destinations]
@@ -59,6 +60,8 @@ flowchart LR
     IDG -- "derived: EPID and deterministic IDs" --> IDS
     GOLD -- "derived: profile and scores" --> RTCP
     MLB -- "derived: approved model" --> MSV
+    MLB -- "derived: features, synced" --> OFS
+    OFS -- "features by EPID" --> MSV
     IDS --> RTCP --> DEC
     MSV --> DEC
     DEC --> DEST
@@ -107,6 +110,7 @@ The Adobe Web SDK sends one small JSON event per page view or action to Adobe's 
 | Who | `ECID` (Adobe's browser ID, set by the SDK) and, after login, `CRMID`. That pair is what lets AEP link the anonymous visit to the known person. |
 | What happened | `eventType`, timestamp, page name and URL, plus a few custom fields such as product line and quote step. |
 | Added by the SDK | Browser, device and screen details, and the referring URL. |
+| Raw input, not a feature | Fields like `coverageBand` are what the visitor entered on the page. Features such as "last coverage band quoted" or "quote starts in 30 days" are computed from these events in Databricks and reach serving only through the profile or the online feature store. `coverageBand` is financial information the consumer gave to get a quote, so it carries a `GLBA_NPI` label |
 | Sent separately | Consent, through the SDK's consent command (for example collect = yes or no). Without consent the SDK sends nothing. |
 | Never sent | Name, email, phone, date of birth, Social Security number, health or underwriting answers. Those stay in the quote system and reach Databricks through the build path. |
 
@@ -195,7 +199,8 @@ flowchart LR
     IDR --> PRF[Read profile: attributes, consent, batch scores]
     PRF --> Q{Does the decision need a fresh score?}
     Q -- "no, most cases" --> USE[Use stored batch score]
-    Q -- "yes" --> RTS[Real-time score: Model Serving with online features]
+    Q -- "yes" --> RTS[Real-time score: Model Serving]
+    OF2[Online feature store, filled by the build path] -- "features by EPID" --> RTS
     USE --> DEC[Decide: segment qualification and NBA arbitration]
     RTS --> DEC
     DEC --> GATE[Policy, consent and contact-frequency gates]

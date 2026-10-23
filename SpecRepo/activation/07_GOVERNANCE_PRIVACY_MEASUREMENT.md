@@ -44,6 +44,18 @@ When a marketer wants an audience using data Legal hasn't cleared:
 | Lineage | Unity Catalog lineage from source to Gold, plus AEP dataset and destination lineage, joined in the catalog so "source to activation" is one view |
 | Access | ABAC on Unity Catalog tags; AEP role-based access by sandbox and label; self-serve access granted by label, not by table |
 
+### ABAC Examples
+
+In Unity Catalog, a policy is written once against a tag and applies automatically to every table or column that carries the tag. Nobody grants access table by table.
+
+| Policy | Applies to | Effect |
+|---|---|---|
+| Mask direct identifiers | Columns tagged `pii=direct` (email, phone, SSN, date of birth) | Shown hashed or masked to everyone except the activation service account and a small PII group. Analysts can still join on the hashed value |
+| Wall off restricted data | Tables tagged `domain=underwriting`, `health` or `claims` | Readable only by underwriting and claims groups. Every marketing group and service account is denied, including on new tables that carry the tag |
+| Training only on allowed inputs | Columns tagged `usage=no_marketing_model` or `protected_class` | Hidden from the ML training service account, so a feature set cannot pull them in by accident |
+| Advisor channel boundaries | Rows tagged with distribution channel (career agency or independent broker-dealer) | The CRM sync for one channel sees only its own advisors' books |
+| Product boundaries (Benge Software) | Rows by `product_id` | A product team sees only its own product's users and events |
+
 Self-serve beyond marketing (Distribution, HR) uses the same mechanism: new groups get a role whose access is defined by labels and purposes, so adding a team is a policy change, not a new copy of the data.
 
 ## 5. Closed-Loop Measurement

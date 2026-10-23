@@ -35,7 +35,7 @@ Supporting features:
 
 ```mermaid
 flowchart TB
-    R[Audience request] --> L{Latency need}
+    R[Audience request] -- "segment definition in code" --> L{Latency need}
     L -- "seconds to minutes" --> ST[AEP streaming or edge]
     L -- "daily or slower" --> J{Logic needs household,<br/>advisor book, large history,<br/>or restricted-adjacent joins?}
     J -- yes --> DB[Databricks SQL<br/>published as federated audience]

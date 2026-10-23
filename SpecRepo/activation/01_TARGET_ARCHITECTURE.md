@@ -68,9 +68,9 @@ flowchart LR
     RTCP -- "most decisions: attributes, consent, nightly scores, no model call" --> DEC
     DEC --> DEST
     GOLD --> AUD -- "same audience, no copy" --> FAC --> DEST
-    DEST --> MKTO
-    DEST --> SFMC
-    DEST --> SFDC
+    DEST -- "advisor lists" --> MKTO
+    DEST -- "consumer contacts, subscriber key = EPID" --> SFMC
+    DEST -- "leads and next action" --> SFDC
     DEST --> PAID
     DEC -- "edge" --> SITE
     SFDC <-- "Marketing Cloud Connect" --> SFMC
@@ -338,8 +338,8 @@ Restricted domains (underwriting, claims, health) live in a separate catalog wit
 
 ```mermaid
 flowchart TB
-  IB[Identity build and survivorship] --> XREF[identity: person_xref and id_change]
-  IB --> PC
+  IB[Identity build and survivorship] -- "ID to EPID map, merges" --> XREF[identity: EPID lookup table and ID change log]
+  IB -- "survived person records" --> PC
   subgraph PC[Profile core: one record per person]
     direction LR
     P1[person_core]
@@ -348,7 +348,7 @@ flowchart TB
     P4[advisor assignments]
     P5[consent]
   end
-  PC --> DP
+  PC -- "joined by EPID" --> DP
   subgraph DP[Certified data products]
     direction LR
     D1[holdings summaries and traits]
@@ -357,11 +357,11 @@ flowchart TB
     D4[audiences and suppressions]
     D5[send log, touch, outcome, experiments]
   end
-  XREF --> AEPI[AEP Identity Service and lookup API]
+  XREF -- "EPID and deterministic IDs" --> AEPI[AEP Identity Service and lookup API]
   PC -- "approved subset" --> AEPP[AEP Real-Time Profile]
   DP -- "flags, scores, top action" --> AEPP
   D4 -- "read in place" --> FAC[Federated audience via FAC]
-  DP --> AN[Analytics and ML in Databricks]
+  DP -- "read in place" --> AN[Analytics and ML in Databricks]
   DP -- "summaries and recommendations" --> CRM[Salesforce CRM sync]
   D2 -- "sync" --> OFS[Online feature store]
 ```

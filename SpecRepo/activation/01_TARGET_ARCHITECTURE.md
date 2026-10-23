@@ -52,7 +52,7 @@ flowchart LR
     AGY --> BR
     CC --> BR
     TP --> BR
-    WEB -- "live events and requests via Edge" --> IDS
+    WEB -- "XDM event: ECID, CRM ID if logged in, event type, page, product" --> IDS
     WEB -- "raw events copy" --> BR
     BR --> SV --> IDG --> GOLD
     SV --> MLB --> GOLD
@@ -78,6 +78,37 @@ flowchart LR
     classDef fed fill:#f3d7ae,stroke:#b8650a,stroke-width:2px,color:#16202b
     class AUD,FAC fed
 ```
+
+### What the Browser Sends to Edge
+
+The Adobe Web SDK sends one small JSON event per page view or action to Adobe's Edge Network. Edge stores it in an AEP dataset and the Real-Time Profile, and answers with any personalization decision for the page. The same events are exported to Bronze. Example for a quote start:
+
+```json
+{
+  "xdm": {
+    "eventType": "quote.started",
+    "timestamp": "2026-10-23T14:02:11Z",
+    "identityMap": {
+      "ECID":  [{ "id": "61580462...", "primary": true }],
+      "CRMID": [{ "id": "c9", "authenticatedState": "authenticated" }]
+    },
+    "web": {
+      "webPageDetails": { "name": "term-life-quote-step-1", "URL": "https://www.example.com/quote/term" }
+    },
+    "_tenant": {
+      "quote": { "productLine": "term_life", "step": 1, "coverageBand": "500k-1m" }
+    }
+  }
+}
+```
+
+| Part | Contents |
+|---|---|
+| Who | `ECID` (Adobe's browser ID, set by the SDK) and, after login, `CRMID`. That pair is what lets AEP link the anonymous visit to the known person. |
+| What happened | `eventType`, timestamp, page name and URL, plus a few custom fields such as product line and quote step. |
+| Added by the SDK | Browser, device and screen details, and the referring URL. |
+| Sent separately | Consent, through the SDK's consent command (for example collect = yes or no). Without consent the SDK sends nothing. |
+| Never sent | Name, email, phone, date of birth, Social Security number, health or underwriting answers. Those stay in the quote system and reach Databricks through the build path. |
 
 ### What Is Allowed Into the Serving Path
 

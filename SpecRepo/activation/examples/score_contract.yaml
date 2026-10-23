@@ -1,0 +1,28 @@
+# Score data product contract (05_ML.md, section 3).
+data_product: ml.scores
+owner: analytics-data-science
+steward: data-products-ml
+grain: one row per (enterprise_person_id, model_name, model_version, scored_at)
+time_semantics: snapshot; latest row per person and model is current until valid_until
+freshness_sla: daily by 05:00 ET for batch models
+columns:
+  - {name: enterprise_person_id, type: string, labels: [I2]}
+  - {name: model_name, type: string}
+  - {name: model_version, type: string}
+  - {name: score, type: double, note: calibrated probability}
+  - {name: decile, type: int}
+  - {name: reason_codes, type: array<string>, note: top 3 drivers as codes, not raw values}
+  - {name: scored_at, type: timestamp}
+  - {name: valid_until, type: timestamp}
+  - {name: population_flag, type: string, note: in_population | out_of_population}
+label_inheritance: strictest label of any input feature applies to score and decile
+quality_tests:
+  - score between 0 and 1
+  - decile distribution within 2 points of 10% per decile on the scoring population
+  - row count within 5% of the eligible population
+  - no person scored by a model version not marked approved in the registry
+aep_mapping:
+  field_group: _tenant.scores
+  fields_sent: [decile, reason_code_family, model_version, scored_at]
+  raw_score_sent: false
+model_card_required: [purpose, decision_it_drives, population, label_definition, features_and_labels, fairness_tests, holdout_results, risk_tier, owner, retirement_criteria]

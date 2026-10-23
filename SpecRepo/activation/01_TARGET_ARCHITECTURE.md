@@ -294,6 +294,64 @@ mktg_prod
 
 Restricted domains (underwriting, claims, health) live in a separate catalog with no grants to marketing principals. That separation is the first line of purpose limitation, ahead of any tag or label.
 
+### 5.1 Gold Layer Map
+
+"Gold" in this design has two parts. **Profile core** is the golden record: one row per real person, keyed on `enterprise_person_id` (EPID), plus the households, relationships, holdings, advisor assignments and consent attached to that person. **Certified data products** are tables built on top of the profile core, each with an owner, a contract and a freshness SLA. A small, approved subset is published to AEP; everything else is read in place in Databricks.
+
+```mermaid
+flowchart TB
+  IB[Identity build and survivorship] --> XREF[identity: person_xref and id_change]
+  IB --> PC
+  subgraph PC[Profile core: one record per person]
+    direction LR
+    P1[person_core]
+    P2[household and relationship]
+    P3[holding roles]
+    P4[advisor assignments]
+    P5[consent]
+  end
+  PC --> DP
+  subgraph DP[Certified data products]
+    direction LR
+    D1[holdings summaries and traits]
+    D2[features and labels]
+    D3[scores and NBA ranks]
+    D4[audiences and suppressions]
+    D5[send log, touch, outcome, experiments]
+  end
+  XREF --> AEPI[AEP Identity Service and lookup API]
+  PC -- "approved subset" --> AEPP[AEP Real-Time Profile]
+  DP -- "flags, scores, top action" --> AEPP
+  D4 -- "read in place" --> FAC[Federated audience via FAC]
+  DP --> AN[Analytics and ML in Databricks]
+  DP -- "summaries and recommendations" --> CRM[Salesforce CRM sync]
+  D2 -- "sync" --> OFS[Online feature store]
+```
+
+| Part | Table | Grain | Built by | Read by | Sent to AEP? | Detail |
+|---|---|---|---|---|---|---|
+| Profile core | `profile.person_core` | One row per person (EPID), current | Identity build + survivorship | Everyone | Yes: approved attributes | 02 section 6 |
+| Profile core | `profile.person_core_history` | Person by effective date | Identity build | Analytics, ML training | No | 05 section 2.2 |
+| Profile core | `profile.household, household_member` | Household; member with role | Household rules (address, landline) | Segmentation, ML, CRM sync | household_id only | 02 section 2 |
+| Profile core | `profile.relationship` | Person-to-person edge, effective-dated | Source relationships (beneficiary, payor) | Segmentation, ML | No | 02 section 2 |
+| Profile core | `profile.holding_role_history` | Person, policy, role, effective-dated | Policy admin Silver | ML, segmentation, CRM summaries | Summary flags only | 02 section 2 |
+| Profile core | `profile.advisor, advisor_assignment_history` | Advisor; person-advisor by date | Distribution and licensing systems | Routing, suppression, ML | Assigned advisor ID | 02 section 2, 06 section 5 |
+| Profile core | `profile.consent_current (+ history)` | Person, channel, purpose | Consent platform feed | Activation gates, everyone | Yes: consent field group | 07 section 3 |
+| Identity | `identity.person_xref` | Identifier to EPID | Identity build | AEP Identity Service, lookup API, CRM sync | Yes: deterministic IDs only | 02 section 5, section 8 |
+| Identity | `identity.id_change` | Merge or split event | Identity build | AEP, CRM, audience recompute | Applied as re-keying | 02 section 5 |
+| Data products | `profile.holdings_summary, household_holdings_summary` | Person; household | dbt on Gold | Segmentation, CRM, AEP | Yes: flags (hasAnnuity, etc.) | 03 example |
+| Data products | `profile.traits` | Person (life stage, rollover window) | dbt on Gold | Segmentation, ML | Yes | 03 section 2 |
+| Data products | `features.*` | Entity by as_of timestamp | Feature pipelines | Training, batch scoring, online store | No (synced to online store) | 05 section 2.4 |
+| Data products | `ml.labels_*` | Entity, observation date, window | Data products with Analytics | Training | No | 05 section 2.2 |
+| Data products | `ml.scores` | Person, model, version, scored_at | Batch scoring | AEP, NBA, monitoring | Yes: decile and reason code | 05 section 3 |
+| Data products | `ml.nba_ranked_actions` | Person, ranked action | NBA batch job | AEP, CRM recommendations | Top action | 05 section 4.2 |
+| Data products | `audiences.segment_membership, audience_snapshot` | Person, audience, version, date | Segments as code; AEP exports | FAC, measurement, ML | Via FAC or AEP segments | 03 section 9 |
+| Data products | `audiences.suppression_*` | Person | Suppression rules | All activation | Yes: imported audience | 03 section 7 |
+| Data products | `activation.send_log, destination_run` | Message; destination run | Channel feeds and AEP run records | Measurement, fatigue model | No | 04 section 8 |
+| Data products | `measurement.touch, outcome` | Touch; lead, application, issue, lapse | Channel, CRM and policy admin feeds | Analytics, ML labels, monitoring | Outcome flags for suppression | 07 section 5 |
+| Data products | `measurement.experiment_assignment, media_weekly` | Person, experiment, arm; week, geo, channel | Experiment service; spend feeds | Uplift, MMM, readouts | No | 05 section 4.2, 07 section 5 |
+
+
 ## 6. Latency Tiers
 
 | Tier | Example use | Path | Target |

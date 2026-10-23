@@ -65,7 +65,7 @@ flowchart LR
     RTCP -- "2. EPID, profile, batch scores" --> MSV
     MSV -- "3. look up features by EPID" --> OFS
     MSV -- "4. fresh score" --> DEC
-    RTCP -- "profile and batch scores" --> DEC
+    RTCP -- "most decisions: attributes, consent, nightly scores, no model call" --> DEC
     DEC --> DEST
     GOLD --> AUD -- "same audience, no copy" --> FAC --> DEST
     DEST --> MKTO

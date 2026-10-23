@@ -27,7 +27,7 @@ flowchart LR
         IDG[Identity graph build]
         GOLD[Gold profile core and data products]
         MLB[Features, training, registry, batch scores]
-        AUD[Composed audiences]
+        AUD[Federated audience: SQL table in Databricks]
         MEAS[Measurement marts]
     end
 
@@ -36,7 +36,7 @@ flowchart LR
         RTCP[AEP Real-Time Customer Profile]
         MSV[Databricks Model Serving and online features]
         DEC[Decisioning: NBA and segment qualification]
-        FAC[AEP Federated Audience Composition]
+        FAC[Federated audience: AEP FAC reads it in place]
         DEST[AEP Destinations]
     end
 
@@ -52,17 +52,17 @@ flowchart LR
     AGY --> BR
     CC --> BR
     TP --> BR
-    WEB -- "streaming XDM" --> IDS
+    WEB -- "live events and requests via Edge" --> IDS
     WEB -- "raw events copy" --> BR
     BR --> SV --> IDG --> GOLD
     SV --> MLB --> GOLD
-    IDG -- "EPID and deterministic IDs" --> IDS
-    GOLD -- "profile and scores" --> RTCP
-    MLB -- "deploy champion model" --> MSV
+    IDG -- "derived: EPID and deterministic IDs" --> IDS
+    GOLD -- "derived: profile and scores" --> RTCP
+    MLB -- "derived: approved model" --> MSV
     IDS --> RTCP --> DEC
     MSV --> DEC
     DEC --> DEST
-    GOLD --> AUD -- "federated" --> FAC --> DEST
+    GOLD --> AUD -- "same audience, no copy" --> FAC --> DEST
     DEST --> MKTO
     DEST --> SFMC
     DEST --> SFDC
@@ -75,7 +75,20 @@ flowchart LR
     SFDC -- "leads, opportunities, activities" --> BR
     RTCP -- "profile and segment export" --> BR
     GOLD --> MEAS
+    classDef fed fill:#f3d7ae,stroke:#b8650a,stroke-width:2px,color:#16202b
+    class AUD,FAC fed
 ```
+
+### What Is Allowed Into the Serving Path
+
+| Data | Enters serving from | Why |
+|---|---|---|
+| Live web and app events, and the page or app request itself | The AEP Edge Network, as they happen | Needed to link an anonymous visitor to a known person at login, to qualify streaming segments such as quote abandonment, and to decide on the next page |
+| Identities (`EPID`), profile attributes, scores, audiences, models | **Only the build path** | One writer for derived data, so serving never computes its own version of the truth |
+
+Rule: raw behavioral events may stream into AEP; anything derived is written only by the Databricks build path. The same events are copied to Bronze, so the build path sees everything the serving path saw. AEP-side computation on those raw events is limited to what real-time use needs (identity stitching, streaming segment qualification, computed attributes over recent events), and its results are exported back to Bronze.
+
+The orange boxes are one federated audience: the SQL table in Databricks, and the AEP Federated Audience Composition (FAC) audience that reads it in place without copying it.
 
 ### 1.2 Build Path
 
@@ -219,7 +232,7 @@ The rule of thumb: **Databricks computes, AEP serves.** AEP should not become a 
 | Identity | Offline graph build, survivorship, household and advisor edges, master data management (MDM) reconciliation | Identity Service graph for real-time stitching (ECID to CRM ID) | Complex matching needs SQL, Spark and audit; real-time stitching needs to be at the edge |
 | Profile attributes | Golden record, computed traits, scores | Serving copy of approved attributes | Single source, small serving footprint |
 | Behavioral events | All events, long retention | Recent events for streaming segments | Streaming segments need events in AEP |
-| Segmentation | Complex, heavy or warehouse-only logic (composed audiences) | Real-time and streaming segments, edge segments | Use each where it is strong |
+| Segmentation | Complex, heavy or warehouse-only logic (federated audiences) | Real-time and streaming segments, edge segments | Use each where it is strong |
 | Machine learning (ML) | Feature engineering, training, batch scoring, registry | Score attributes on the profile; Customer AI where licensed | AEP Data Science Workspace is no longer sold; custom ML belongs in Databricks |
 | Activation | Governed exception path for bulk files to non-AEP targets | Primary path to all channels | One policy enforcement point |
 | Measurement | Joins sends, exposures, journeys and outcomes | Source of segment and journey events | Analysts need the joined picture |
@@ -252,7 +265,7 @@ flowchart TB
     Q{Does the audience need<br/>real-time or edge evaluation?}
     Q -- yes --> A[Path A: AEP-native segment<br/>streaming or edge]
     Q -- no --> Q2{Does it need data that is<br/>too large or too sensitive to copy into AEP?}
-    Q2 -- yes --> B[Path B: Composed in Databricks,<br/>federated through FAC]
+    Q2 -- yes --> B[Path B: Federated audience,<br/>SQL in Databricks, read by FAC]
     Q2 -- no --> Q3{Is the target an AEP destination?}
     Q3 -- yes --> A2[Path A: AEP batch segment]
     Q3 -- no --> C[Path C: Governed reverse ETL<br/>from Databricks - exception path]

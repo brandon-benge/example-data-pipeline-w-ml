@@ -25,6 +25,7 @@ Acronyms are also spelled out on first use in each file. Terms marked with a sta
 | NBA ★ | Next best action: ranks every eligible offer or message for a person and picks one, using response odds, value, eligibility and fatigue ([05_ML.md](./05_ML.md), model 5) |
 | NPN / CRD | National Producer Number (insurance producer licensing) / Central Registration Depository number (registered representatives) |
 | PoC | Proof of concept |
+| PSI | Population stability index: a number that measures how much a distribution (of scores or a feature) has shifted from the training baseline; used to detect drift |
 | PQL | In AEP: Profile Query Language, the segment definition language. In the Benge Software file: product-qualified lead |
 | RACI | Responsible, accountable, consulted, informed: a role assignment matrix |
 | SCD type 2 | Slowly changing dimension type 2: history kept as effective-dated rows |

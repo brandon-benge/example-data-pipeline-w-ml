@@ -35,8 +35,8 @@ flowchart LR
         IDS[AEP Identity Service]
         RTCP[AEP Real-Time Customer Profile]
         OFS[Online feature store]
-        MSV[Databricks Model Serving]
-        DEC[Decisioning: NBA and segment qualification]
+        MSV["Databricks Model Serving: fresh scores, called only by the decision API"]
+        DEC["Decisioning: Edge rules, or the decision API when a fresh score is needed"]
         FAC[Federated audience: AEP FAC reads it in place]
         DEST[AEP Destinations]
     end

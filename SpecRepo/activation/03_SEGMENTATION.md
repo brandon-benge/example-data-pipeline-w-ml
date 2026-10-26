@@ -86,6 +86,18 @@ Deploying and refreshing are separate. The definition (the YAML file) changes on
 
 Sending follows the destination's schedule. A daily audience to SFMC is usually exported once a day after the refresh, and journeys pick up the new members.
 
+### Downsides Of Streaming and Edge Versus Batch
+
+| Downside | What it means | How the design handles it |
+|---|---|---|
+| Limited logic | Only simple patterns: one event, or a short sequence within a time window, plus attributes already on the profile. No household or advisor joins, no heavy aggregations, short look-backs. Edge is the most limited, because it sees only the profile slice copied to the Edge | Precompute anything complex in the build path as a profile flag, then let the streaming rule test the flag |
+| Quotas and cost | AEP caps how many streaming and edge segments a sandbox can have and how many events per second it evaluates. Real-time capacity is part of the license | Treat streaming slots as scarce; review them quarterly and retire unused ones |
+| Harder to test and audit | Batch membership is a daily snapshot you can count, reconcile with the Databricks shadow copy and explain later. Streaming membership changes constantly | Export membership history to Bronze so "who was in it when we sent" can be answered |
+| Noisy inputs | Late, duplicate or out-of-order events can qualify someone by mistake, for example a quote-abandon email to someone who finished on another device | Deduplicate by event ID, add a waiting window, and apply frequency caps and just-converted suppression |
+| False freshness | A streaming rule that also uses a daily attribute, such as a nightly score, is only as fresh as that attribute | Document which inputs are daily in the segment file; don't promise real-time on them |
+
+Rule of thumb: use streaming or edge only when acting within minutes changes the outcome, such as quote abandonment, a just-completed application or same-session web content. Everything else stays batch or federated, which is cheaper, easier to test and supports richer logic.
+
 ### Lifecycle
 
 ```mermaid

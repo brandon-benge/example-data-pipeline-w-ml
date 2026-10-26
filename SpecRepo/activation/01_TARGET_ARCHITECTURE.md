@@ -171,6 +171,7 @@ One page view, end to end. Steps 3 to 7 are a single request and response, usual
 | 3. It shows up on the page | Either the SDK applies it automatically (a visual change authored in Adobe's editor, such as swapping banner HTML), or page code reads the JSON offer, like the one above, and renders it in its own component. The slot is then un-hidden. With no decision, or after the timeout, the default content shows. |
 | 4. Impression and click go back | The SDK sends a display event when the offer is shown and an interact event when it is clicked, each carrying the proposition ID. These land in AEP and Bronze like any other event, which is how the offer is measured against its holdout. |
 | When a fresh model score is needed | Edge does not call Databricks inside this request. The page calls the company's decision API after load, which runs the serving path (resolve EPID, read profile, score on Model Serving, gates) and returns the same kind of offer. |
+| What is and isn't probabilistic | Identity at Edge is exact lookups only. The probabilities were computed earlier: nightly scores are model outputs stored on the profile. At Edge they are used by fixed rules: eligible offers are filtered by consent and segment, then ranked by the stored top action or priority, and one is returned per slot. The only randomness is the test split, which puts a share of visitors in the holdout. The decision API follows the same steps (eligible list, rank, gates, pick one) but ranks with a fresh score. |
 
 ### What Is Allowed Into the Serving Path
 

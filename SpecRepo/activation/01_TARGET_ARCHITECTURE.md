@@ -118,6 +118,38 @@ This call is separate from the page fetch and happens after it. The browser firs
 | Sent separately | Consent, through the SDK's consent command (for example collect = yes or no). Without consent the SDK sends nothing. |
 | Never sent | Name, email, phone, date of birth, Social Security number, health or underwriting answers. Those stay in the quote system and reach Databricks through the build path. |
 
+### What Edge Sends Back, and How It Shows Up
+
+```json
+{
+  "requestId": "4d1f...",
+  "handle": [
+    { "type": "personalization:decisions",
+      "payload": [
+        { "id": "prop-81c...",
+          "scope": "web://www.example.com/quote/term#hero",
+          "items": [
+            { "schema": "https://ns.adobe.com/personalization/json-content-item",
+              "data": { "content": {
+                "headline": "Questions about coverage? Talk to Dana, your advisor",
+                "cta": "Book 15 minutes",
+                "offerId": "advisor_callback_v2" } } }
+          ],
+          "scopeDetails": { "activity": { "id": "nba-quote-assist" } } }
+      ] },
+    { "type": "identity:result", "payload": [ { "namespace": { "code": "ECID" }, "id": "61580462..." } ] }
+  ]
+}
+```
+
+| Step | What happens |
+|---|---|
+| 1. Page loads | A prehiding snippet hides only the slot that will be personalized, such as the hero banner, for at most a short timeout (typically up to 3 seconds) so the visitor never sees the default flash and then change. |
+| 2. One POST, one answer | The same Edge call that carries the event comes back with the decision itself in the response body, not a token to look it up later. Edge decides during that call, using the edge copy of the profile: edge segments, consent and the nightly scores and top action the build path loaded. |
+| 3. It shows up on the page | Either the SDK applies it automatically (a visual change authored in Adobe's editor, such as swapping banner HTML), or page code reads the JSON offer, like the one above, and renders it in its own component. The slot is then un-hidden. With no decision, or after the timeout, the default content shows. |
+| 4. Impression and click go back | The SDK sends a display event when the offer is shown and an interact event when it is clicked, each carrying the proposition ID. These land in AEP and Bronze like any other event, which is how the offer is measured against its holdout. |
+| When a fresh model score is needed | Edge does not call Databricks inside this request. The page calls the company's decision API after load, which runs the serving path (resolve EPID, read profile, score on Model Serving, gates) and returns the same kind of offer. |
+
 ### What Is Allowed Into the Serving Path
 
 | Data | Enters serving from | Why |

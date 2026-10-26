@@ -22,9 +22,13 @@ Get a certified audience, with the right attributes and the right consent, into 
 
 | | Marketo Engage | SFMC |
 |---|---|---|
-| Typical audience | Advisors, employers, plan sponsors, prospects in a considered B2B-style funnel | Consumers and policyholders at volume |
-| Strengths | Lead scoring, Salesforce lead and contact sync, program-level attribution, account-based programs | High-volume send, SMS (MobileConnect), transactional messages, Journey Builder |
-| Owner | Advisor or distribution marketing | Consumer marketing |
+| What it is | Marketing automation built for B2B and considered purchases | Marketing cloud built for high-volume consumer messaging |
+| Who it talks to here | Advisors, employers, plan sponsors and prospects in a long sales funnel | Consumers and policyholders at volume |
+| Typical programs | Advisor recruiting and enablement, employer benefit programs, lead nurture, webinars | Onboarding, cross-sell, policy anniversary, quote-abandon follow-up, billing and servicing notices |
+| Strengths | Lead scoring, two-way Salesforce lead and contact sync, account-based programs, program-level attribution | Very high send volume, SMS, transactional messages, Journey Builder multi-step journeys |
+| Record key | Marketo lead ID, synced to the Salesforce lead or contact | Subscriber key = EPID, never the email address |
+| Link to Salesforce CRM | Native sync: hands warm leads to advisors and sales as CRM leads or tasks | Marketing Cloud Connect: reads CRM data and logs sends back to the contact |
+| Owned by | Advisor and distribution marketing | Consumer marketing |
 
 The rule: **audiences, taxonomy, consent and suppression are owned upstream; the platforms only execute.**
 

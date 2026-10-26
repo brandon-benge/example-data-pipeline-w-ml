@@ -14,6 +14,8 @@ Labels are defined once, in YAML in this repo (extending [config/governance/clas
 | Purpose restriction (custom) | `UW` underwriting, `HLTH` health, `CLM` claims detail, `NOMKT` not cleared for marketing | Separate catalog plus tags | Custom labels with policies denying marketing actions |
 | Regulatory regime | `GLBA_NPI`, `CCPA_COVERED` | Table and column tags | Custom labels where activation behavior differs |
 
+**Where labels live.** In AEP, a data usage label is set on a field in the Experience Data Model (XDM) schema. Every dataset built on that schema inherits it. A label can also be set on a whole dataset when every field in it carries the same restriction. Segments and destinations inherit the labels of every field they reference, and that is what the policy engine checks. In Databricks, the matching Unity Catalog tags go mostly on columns, which drive masking and ABAC, and on whole tables or catalogs for contract and purpose restrictions. Both sides are generated from the same YAML, so a `NOMKT` column tag and the `NOMKT` field label cannot drift apart.
+
 Each AEP destination declares its marketing actions (email marketing, onsite personalization, third-party export, cross-site targeting). Policies map labels to forbidden actions. That makes "this data can't be used for marketing" a configuration that fails closed, not a request for good behavior.
 
 ## 2. Purpose Limitation, Layer by Layer

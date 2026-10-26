@@ -17,6 +17,7 @@ Acronyms are also spelled out on first use in each file. Terms marked with a sta
 | EPID | Enterprise person ID, the durable ID the identity spine issues (`enterprise_person_id`) |
 | FAC | Federated Audience Composition: AEP audiences built from warehouse tables without copying the full data into AEP |
 | GLBA | Gramm-Leach-Bliley Act, US financial privacy law |
+| Marketing action | in AEP, the declared use of a destination, such as email targeting, onsite personalization or export to a third party. Policies say which data labels may not be used for which actions, and AEP blocks activation when they conflict |
 | MDM | Master data management, the enterprise golden record for parties |
 | ML | Machine learning |
 | MMM ★ | Marketing mix model: estimates each channel's contribution to sales from weekly spend and outcomes, and where the next dollar should go ([05_ML.md](./05_ML.md), model 10) |

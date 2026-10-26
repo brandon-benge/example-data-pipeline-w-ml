@@ -32,6 +32,7 @@ Acronyms are also spelled out on first use in each file. Terms marked with a sta
 | SCD type 2 | Slowly changing dimension type 2: history kept as effective-dated rows |
 | SFMC | Salesforce Marketing Cloud |
 | SLA / SLO | Service level agreement / objective: a promised freshness, quality or response time |
+| Splink | An open-source Python library for probabilistic record linkage (matching records that refer to the same person without a shared key). It runs on Spark in Databricks, learns match weights from the data itself, and explains each match score field by field |
 | Survivorship | Choosing which value survives into the golden record when several source records for one person disagree, by rules such as most trusted source, then most recent |
 | TCPA | Telephone Consumer Protection Act: consent rules for calls and texts |
 | Uplift ★ | The extra response caused by contacting someone, measured against a randomized holdout; separates persuadables from people who would buy anyway ([05_ML.md](./05_ML.md), model 6) |

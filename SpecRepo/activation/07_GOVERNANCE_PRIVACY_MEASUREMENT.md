@@ -79,6 +79,31 @@ destinations: [sfmc_consumer]   # certified at sign-off; adding one needs a new 
 | `marketo_advisor` | No | Refused: "audience not certified for marketo_advisor" |
 | `meta_custom_audience` | No | Refused, and gate 1 would also block it on `GLBA_NPI` |
 
+### Where a Semantic Model Sits
+
+The semantic model lives in Databricks, between the Gold tables and everything that reads them. It defines each business concept once, along with its label. AEP never reads it directly.
+
+| Layer | What lives there |
+|---|---|
+| Gold tables | `profile.person_core`, holdings, consent, send log |
+| **Semantic model** (Unity Catalog metric views) | Named dimensions and measures with labels: `has_individual_life` (GLBA_NPI), `email_reachable`, `email_response_rate` |
+| Readers | Segment SQL that FAC reads, dashboards and Genie, analyst notebooks, the measurement mart |
+| AEP | Receives the results with labels already set on each field (gate 1). It does not read the model. |
+
+```yaml
+# metric view: marketing_person (excerpt)
+source: gold.profile.person_core
+dimensions:
+  - name: has_individual_life
+    expr: has_individual_life
+    tags: {regime: GLBA_NPI}               # labelled once; every reader inherits it
+  - name: email_reachable
+    expr: consents.marketing.email = 'y'   # consent rule written once
+measures:
+  - name: email_response_rate
+    expr: sum(clicked) / nullif(sum(delivered), 0)
+```
+
 ## 2. Purpose Limitation, Layer by Layer
 
 When a marketer wants an audience using data Legal hasn't cleared:

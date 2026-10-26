@@ -48,6 +48,19 @@ p42   WKP-XSELL-LIFE-FY27-Q4-EM  email    click  2026-10-26T12:42Z  run_8812
 
 Streaming activation follows the same steps, with two differences. Membership changes are sent within minutes, and the channel step is usually a single trigger, such as a journey entry or a CRM task (section 4.2).
 
+### The Channel Table as a Change Queue
+
+The SFMC data extension or Marketo static list is not a true change data capture (CDC) log. It is an upsert table: one row per person holding their latest status (`realized` or `exited`). The channel tool treats new and changed rows as its queue. What differs between the modes is when rows are written and how the channel notices them. The walkthrough page animates each mode step by step.
+
+| | Batch | Streaming | Edge |
+|---|---|---|---|
+| Who writes the table | AEP batch dataflow | AEP streaming destination | No table |
+| When | Once per scheduled run, such as 06:00 | Within minutes of qualifying, one person at a time | Not applicable: the decision comes back in the page response |
+| What is written | Only changes since the last run: new rows `realized`, leavers flipped to `exited` | The same, as each change happens | Membership stays on the edge profile |
+| SFMC reads it with | Journey entry source on the data extension, evaluated for new records on a schedule | Journey entry source that admits new rows as they arrive | Not used |
+| Marketo reads it with | Batch smart campaign on "Member of List" | Trigger campaign on "Added to List" | Not used |
+| Exit | `exited` row: SFMC exit criteria, or Marketo "Removed from List" | Same, within minutes | The next request simply doesn't qualify |
+
 ## 2. Destination Inventory (Enterprise)
 
 | Destination | Connection | Identity sent | Use |

@@ -146,6 +146,29 @@ In Unity Catalog, a policy is written once against a tag and applies automatical
 
 Self-serve beyond marketing (Distribution, HR) uses the same mechanism: new groups get a role whose access is defined by labels and purposes, so adding a team is a policy change, not a new copy of the data.
 
+### Freshness and Quality KPIs
+
+These are what a data product contract promises and the daily scorecard reports. The last column is an example morning. A miss pages the owner, and a miss on a certified product blocks publishing until it is fixed or waived.
+
+| Type | Data product | KPI | Target | Example day |
+|---|---|---|---|---|
+| Freshness | Gold profile (person_core) | Ready by 05:00 ET | On time 99% of days | Today 04:41 |
+| Freshness | Batch scores in AEP | Score age when read | Under 26 hours | Today 22 h |
+| Freshness | Batch audience | Gold ready to row in SFMC or Marketo | Under 2 hours | Today 1 h 23 min |
+| Freshness | Streaming audience | Event to row in the channel, p95 | Under 15 minutes | Today 6 min |
+| Freshness | Edge decision | Request to response, p95 | Under 150 ms | Today 96 ms |
+| Freshness | Consent | Opt-out to every channel suppressed | Under 1 hour streaming, next run for batch (legal limit is 10 business days for email) | Today 38 min |
+| Freshness | Outcomes (applications) | Prior day complete | By 08:00 ET | Today 09:15 (miss) |
+| Quality | Identity | False merges on the labelled golden set | Under 0.1% | 0.04% |
+| Quality | Identity | People sharing a hard key such as SSN token | Under 0.5% | 0.3% |
+| Quality | Profile core | Exactly one row per EPID | 100% | 100% |
+| Quality | Profile core | Contactable people with a valid email and a consent value | At least 97% | 98.2% |
+| Quality | Audiences | AEP count vs. channel count, per destination | Within 1% | 0.4% |
+| Quality | Audiences | AEP audience vs. its SQL twin | Within 2% (alert after 2 days) | 3.1% day 1 (watch) |
+| Quality | Activation | Sends carrying a campaign_key | 100% of new sends | 99.6% (miss) |
+| Quality | Activation | Destination records failed | Under 1% | 0.2% |
+| Quality | Scores | Population stability index (PSI) vs. training | Under 0.1; alert above 0.25 | 0.07 |
+
 ## 5. Closed-Loop Measurement
 
 ### Campaign Taxonomy Key

@@ -258,6 +258,8 @@ The Enterprise Data Office's MDM remains the system of record for the party mast
 
 ## 10. Build vs. Buy
 
+The decision is about the offline identity resolution engine: the software that matches source records into people, applies survivorship, gives stewards a review queue and issues the EPID. "Build" means running open-source matching (Splink or Zingg) with our own rules on Databricks. "Buy" means licensing a packaged identity resolution product, for example an entity resolution engine such as Senzing or Quantexa, the matching module of an MDM suite such as Reltio or Informatica, or a CDP with built-in resolution such as Amperity. AEP and the channels consume the result either way.
+
 ### Options
 
 | Option | What it is | Strengths | Weaknesses |

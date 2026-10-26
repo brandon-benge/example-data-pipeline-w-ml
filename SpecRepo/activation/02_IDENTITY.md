@@ -243,6 +243,8 @@ sequenceDiagram
     D->>D: Offline build adds ecid node, edge rule T2-auth
 ```
 
+Note on `e1`: the ECID is an assigned cookie ID, not something the browser makes up. On the first visit Adobe Edge generates it and returns it in the response, and the Web SDK stores it in a first-party cookie on the company's domain (`kndctr_<org>_identity`). Every later request sends it back. Clearing cookies or switching browser or device produces a new ECID, which is why linking it to the CRM ID at login matters. Because Safari caps cookies set by JavaScript at about 7 days, the ID cookie should be set by the company's server (first-party device ID, or a company subdomain pointed at Edge).
+
 ## 9. Coordination With Enterprise MDM
 
 The Enterprise Data Office's MDM remains the system of record for the party master. The spine is a consumer and a contributor, not a competitor.

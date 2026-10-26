@@ -86,7 +86,7 @@ Deploying and refreshing are separate. The definition (the YAML file) changes on
 
 Sending follows the destination's schedule. A daily audience to SFMC is usually exported once a day after the refresh, and journeys pick up the new members.
 
-### Downsides Of Streaming and Edge Versus Batch
+### Downsides of Streaming and Edge Versus Batch
 
 | Downside | What it means | How the design handles it |
 |---|---|---|

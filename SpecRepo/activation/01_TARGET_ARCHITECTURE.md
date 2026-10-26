@@ -120,6 +120,28 @@ This call is separate from the page fetch and happens after it. The browser firs
 
 ### What Edge Sends Back, and How It Shows Up
 
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant W as Company web server or CDN
+  participant E as Adobe Edge Network
+  participant H as AEP hub (profile store)
+  participant Z as Bronze in Databricks
+  B->>W: 1. GET /quote/term
+  W-->>B: 2. HTML with default banner, hero slot hidden
+  B->>E: 3. POST event: ECID, CRM ID, page, quote step
+  Note over E: 4. Resolve identity: ECID + CRM ID to EPID
+  Note over E: 5. Read edge copy of profile for EPID: consent, segments, nightly scores, top action
+  Note over E: 6. Evaluate edge segments, pick the offer
+  E-->>B: 7. Decision JSON for the hero slot
+  Note over B: 8. Render offer, show slot
+  B->>E: 9. Display event, later click event
+  E--)H: Store event, update profile, streaming segments (background)
+  E--)Z: Event Forwarding copy (background)
+```
+
+One page view, end to end. Steps 3 to 7 are a single request and response, usually tens of milliseconds. The writes to the AEP hub and Bronze happen in the background and never delay the page.
+
 ```json
 {
   "requestId": "4d1f...",

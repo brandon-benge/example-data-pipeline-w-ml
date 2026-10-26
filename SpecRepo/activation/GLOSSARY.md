@@ -7,9 +7,9 @@ Acronyms are also spelled out on first use in each file. Terms marked with a sta
 | ABAC | Attribute-based access control: access granted by data tags and the user's attributes, not table by table |
 | AEP | Adobe Experience Platform, Adobe's customer data platform |
 | AUC | Area under the ROC curve, a ranking-quality metric for classifiers |
-| Channel | A way of reaching a person, and the tool that delivers it: email and SMS (SFMC), advisor and B2B email (Marketo), advisor tasks (Salesforce CRM), paid ads, the website (Edge), direct mail |
 | CCPA / CPRA | California Consumer Privacy Act and its amendment, the California Privacy Rights Act |
 | CDC | Change data capture: streaming row-level changes out of a source database |
+| Channel | A way of reaching a person, and the tool that delivers it: email and SMS (SFMC), advisor and B2B email (Marketo), advisor tasks (Salesforce CRM), paid ads, the website (Edge), direct mail |
 | CI | Continuous integration: automated checks that run on every proposed change |
 | CLV | Customer lifetime value: expected value of a person or household over a time horizon |
 | CRM | Customer relationship management system, here Salesforce |

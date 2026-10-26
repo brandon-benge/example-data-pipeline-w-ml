@@ -56,4 +56,5 @@
   suppressions: [sup_global_hard_stops_v4, sup_customer_care_v2]
   expected_size: {min: 100000, max: 400000}
   destinations: [sfmc_consumer]
+  holdout: {experiment_id: exp_wkp_life_fy27, share: 0.10}
   expires_on: 2027-12-31

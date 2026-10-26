@@ -45,6 +45,7 @@
   steward: data-products-audiences
   marketing_action: email_marketing
   compute_path: federated
+  refresh: daily_after_gold   # membership re-run daily; definition redeploys only on merge
   logic:
     sql: |
       select m.enterprise_person_id

@@ -73,6 +73,19 @@ Each audience is a YAML file in a repo, reviewed like code. The full example is 
 4. Dry run: size computed in Databricks and compared with `expected_size`.
 5. Diff report in the pull request: who enters, who leaves, compared with the current version.
 
+### How Often Membership Refreshes
+
+Deploying and refreshing are separate. The definition (the YAML file) changes only when a new version is merged, and `expires_on` forces a review before it lapses. The membership, meaning who is in the audience right now, is re-evaluated on the compute path's own schedule:
+
+| Compute path | Membership refreshed | Typical use | Tradeoff |
+|---|---|---|---|
+| Federated (Databricks SQL read by FAC) | Daily, right after Gold is published (about 05:00). FAC re-runs the SQL and pulls the new EPID list | Household, advisor-book and heavy-join audiences | Up to a day stale |
+| AEP batch | Daily, in AEP's batch segmentation run | Simple rules on profile attributes and scores | Up to a day stale |
+| AEP streaming | Continuously. A person enters or leaves within minutes of the event that changes their status | Quote abandonment, just-applied suppression, event-triggered journeys | Limited logic, sandbox quotas, harder to test and audit |
+| AEP edge | On every page request, at Adobe's Edge Network | Same-page or next-page web personalization | Most limited logic; sees only the profile slice copied to the Edge |
+
+Sending follows the destination's schedule. A daily audience to SFMC is usually exported once a day after the refresh, and journeys pick up the new members.
+
 ### Lifecycle
 
 ```mermaid

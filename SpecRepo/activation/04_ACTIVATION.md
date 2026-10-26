@@ -4,6 +4,50 @@
 
 Get a certified audience, with the right attributes and the right consent, into the right channel, and record exactly who was sent what so the outcome can be measured. Activation is where governance becomes real: it is the last point where a bad decision can be stopped.
 
+## 1.1 How Activation Works, Step by Step
+
+A segment says who is in the audience. Activation turns that list into a message and records what happened. In AEP it runs as a **destination dataflow**, which is a saved connection from one audience to one channel, with a field mapping and a schedule. The example follows Jane Doe (`p42`) from `wkp_xsell_life_group_only_households_v1` to an SFMC email.
+
+| Step | Where | What happens |
+|---|---|---|
+| 1. Membership | Databricks, then AEP | The segment run writes `p42 · wkp_xsell_life_group_only_households_v1 · realized · 2026-10-26`. Leavers are written as `exited` |
+| 2. Dataflow, set up once | AEP Destinations | The audience is connected to `sfmc_consumer`, given a field mapping and a schedule. The three gates (section 5) check this step |
+| 3. Scheduled run | AEP | At 06:00 the dataflow picks up new and exited members, drops anyone whose consent fails for this channel, and sends the rest |
+| 4. Delivery | SFMC | Each member lands as a row in the audience's data extension |
+| 5. Journey | SFMC Journey Builder | The data extension is the journey's entry source, so new rows get email 1. Every send carries the `campaign_key` |
+| 6. Feedback | Lakehouse | SFMC engagement events and AEP's run record land in `activation.send_log` |
+| 7. Exit | AEP, then SFMC | When p42 buys individual life, the next run sends `exited`, and the journey's exit rule removes p42 before email 2 |
+
+```yaml
+# Step 2: destination dataflow
+dataflow: wkp_xsell_life_to_sfmc
+audience: wkp_xsell_life_group_only_households_v1
+destination: sfmc_consumer
+marketing_action: email_marketing
+schedule: daily 06:00 ET
+mapping:                              # AEP profile field -> SFMC field
+  identityMap.EPID:   SubscriberKey
+  person.email:       EmailAddress
+  person.first_name:  FirstName
+  advisor.name:       AdvisorName
+  audience.status:    AudienceStatus  # realized or exited
+campaign_key: WKP-XSELL-LIFE-FY27-Q4-EM
+```
+
+```text
+# Step 4: row in the SFMC data extension
+SubscriberKey  EmailAddress          FirstName  AdvisorName  AudienceStatus  ExportedAt
+p42            jane.doe@example.com  Jane       R. Patel     realized        2026-10-26T06:04Z
+
+# Step 6: rows in activation.send_log
+epid  campaign_key               channel  event  event_ts           run_id
+p42   WKP-XSELL-LIFE-FY27-Q4-EM  email    sent   2026-10-26T09:00Z  run_8812
+p42   WKP-XSELL-LIFE-FY27-Q4-EM  email    click  2026-10-26T12:42Z  run_8812
+--    run_8812 summary: exported 48,210 · dropped for consent 312 · failed 0
+```
+
+Streaming activation follows the same steps, with two differences. Membership changes are sent within minutes, and the channel step is usually a single trigger, such as a journey entry or a CRM task (section 4.2).
+
 ## 2. Destination Inventory (Enterprise)
 
 | Destination | Connection | Identity sent | Use |

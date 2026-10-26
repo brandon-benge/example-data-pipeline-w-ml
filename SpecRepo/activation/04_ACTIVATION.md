@@ -22,7 +22,7 @@ Get a certified audience, with the right attributes and the right consent, into 
 
 | | Marketo Engage | SFMC |
 |---|---|---|
-| What it is | Marketing automation built for B2B and considered purchases | Marketing cloud built for high-volume consumer messaging |
+| What it is | Marketing automation software built for business-to-business (B2B) marketing: Prudential uses it to market to other businesses and their people (advisors, partner firms, employers) | Marketing software built for business-to-consumer (B2C) messaging at high volume: Prudential uses it to reach individual customers and prospects |
 | Who it talks to here | Advisors, employers, plan sponsors and prospects in a long sales funnel | Consumers and policyholders at volume |
 | Typical programs | Advisor recruiting and enablement, employer benefit programs, lead nurture, webinars | Onboarding, cross-sell, policy anniversary, quote-abandon follow-up, billing and servicing notices |
 | Strengths | Lead scoring, two-way Salesforce lead and contact sync, account-based programs, program-level attribution | Very high send volume, SMS, transactional messages, Journey Builder multi-step journeys |

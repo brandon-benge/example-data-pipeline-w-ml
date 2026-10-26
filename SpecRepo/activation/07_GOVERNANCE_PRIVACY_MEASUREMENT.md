@@ -14,9 +14,70 @@ Labels are defined once, in YAML in this repo (extending [config/governance/clas
 | Purpose restriction (custom) | `UW` underwriting, `HLTH` health, `CLM` claims detail, `NOMKT` not cleared for marketing | Separate catalog plus tags | Custom labels with policies denying marketing actions |
 | Regulatory regime | `GLBA_NPI`, `CCPA_COVERED` | Table and column tags | Custom labels where activation behavior differs |
 
-**Where labels live.** In AEP, a data usage label is set on a field in the Experience Data Model (XDM) schema. Every dataset built on that schema inherits it. A label can also be set on a whole dataset when every field in it carries the same restriction. Segments and destinations inherit the labels of every field they reference, and that is what the policy engine checks. In Databricks, the matching Unity Catalog tags go mostly on columns, which drive masking and ABAC, and on whole tables or catalogs for contract and purpose restrictions. Both sides are generated from the same YAML, so a `NOMKT` column tag and the `NOMKT` field label cannot drift apart.
-
 Each AEP destination declares its marketing actions (email marketing, onsite personalization, third-party export, cross-site targeting). Policies map labels to forbidden actions. That makes "this data can't be used for marketing" a configuration that fails closed, not a request for good behavior.
+
+### Example: the three gates with real data
+
+The examples follow Jane Doe (`p42`) through `wkp_xsell_life_group_only_households_v1`, which is mapped to `sfmc_consumer` for email.
+
+**Gate 1: labels on the metadata.** Unity Catalog tags and AEP field labels come from the same YAML list.
+
+| Field (profile.person_core) | Unity Catalog column tags | AEP field labels | Marketing actions the labels forbid |
+|---|---|---|---|
+| `enterprise_person_id` | `identity=direct` | `I1` | None on its own |
+| `email` | `identity=direct`, `pii` | `I1` | Third-party export unless hashed |
+| `has_group_life` | `regime=GLBA_NPI` | `GLBA_NPI` | Third-party export |
+| `has_individual_life` | `regime=GLBA_NPI` | `GLBA_NPI` | Third-party export |
+| `underwriting_class` | `purpose=UW`, `NOMKT` | `UW`, `NOMKT` | All marketing actions |
+| `health_condition_flag` | `purpose=HLTH`, `NOMKT` | `HLTH`, `NOMKT` | All marketing actions |
+
+The audience inherits `I1` and `GLBA_NPI`, and neither label forbids `email_marketing`, so the mapping passes. If `underwriting_class` were added to the logic, the audience would inherit `NOMKT` and the mapping would be blocked:
+
+```text
+POLICY VIOLATION  audience=wkp_xsell_life_group_only_households_v1  destination=sfmc_consumer
+  marketing_action: email_marketing
+  field: person_core.underwriting_class   labels: [UW, NOMKT]
+  policy: "No marketing use of underwriting data"  -> DENY
+```
+
+**Gate 2: one person's consent row**, checked per person at every export.
+
+```json
+{
+  "enterprise_person_id": "p42",
+  "consents": {
+    "collect":     { "val": "y" },
+    "share":       { "val": "n" },
+    "personalize": { "content": { "val": "y" } },
+    "marketing": {
+      "email": { "val": "y", "time": "2026-03-14T10:02:00Z", "source": "web_preference_center" },
+      "sms":   { "val": "n", "time": "2026-05-02T18:40:00Z", "source": "sms_stop_reply" },
+      "call":  { "val": "y" },
+      "preferred": "email"
+    }
+  },
+  "jurisdiction": "NJ"
+}
+```
+
+| Export of p42 to | Consent checked | Result |
+|---|---|---|
+| SFMC email journey | `marketing.email = y` | Sent |
+| SFMC SMS journey | `marketing.sms = n` | Dropped from this export only |
+| Paid media custom audience | `share = n` | Dropped from this export only |
+
+**Gate 3: the destination allow-list** in the segment file.
+
+```yaml
+marketing_action: email_marketing
+destinations: [sfmc_consumer]   # certified at sign-off; adding one needs a new review
+```
+
+| Mapping attempt | In `destinations`? | Result |
+|---|---|---|
+| `sfmc_consumer` | Yes | Allowed, then gates 1 and 2 run |
+| `marketo_advisor` | No | Refused: "audience not certified for marketo_advisor" |
+| `meta_custom_audience` | No | Refused, and gate 1 would also block it on `GLBA_NPI` |
 
 ## 2. Purpose Limitation, Layer by Layer
 

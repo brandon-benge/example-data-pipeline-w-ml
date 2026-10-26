@@ -257,6 +257,38 @@ flowchart LR
 | Batch scoring | Daily by 05:00 | `ml.scores`, `ml.nba_ranked_actions` | Score contract tests ([examples/score_contract.yaml](./examples/score_contract.yaml)) |
 | Publish | After each gate passes | AEP identities and profile attributes, lookup store, online features, serving endpoint | Label check: scores inherit input labels |
 
+#### Example: one person through the identity build
+
+These are rows in `silver.person_source`: one per person per source system, already cleaned and with sensitive values hashed or tokenized.
+
+| Source | Source ID | Name | Date of birth | Address | Email (hashed) | SSN (tokenized) | Updated |
+|---|---|---|---|---|---|---|---|
+| Policy admin | POL-55102 | Jane A. Doe | 1971-03-14 | 12 Oak St, Newark NJ | none | ssn_7e0… | 2024-02-10 |
+| Salesforce CRM | c9 | Jane Doe | 1971-03-14 | 48 Elm Ave, Newark NJ | em_4c1… (jane@new) | ssn_7e0… | 2026-09-30 |
+| Web account | web-u-8812 | Jane Doe | none | none | em_4c1… (jane@new) | none | 2026-10-20 |
+| Agency system | AGT-7781 | J. Doe | 1971-03-14 | 12 Oak Street, Newark NJ | em_77a… (jane@old) | none | 2023-05-02 |
+
+Matching links all four to one person, and the identity build writes the EPID lookup table (`identity.person_xref`):
+
+| Source | Source ID | EPID | Match rule |
+|---|---|---|---|
+| Policy admin | POL-55102 | p42 | T1: same SSN token and date of birth as the CRM record |
+| Salesforce CRM | c9 | p42 | T1: same SSN token and date of birth |
+| Web account | web-u-8812 | p42 | T2: same email hash and last name as the CRM record |
+| Agency system | AGT-7781 | p42 | T3: probabilistic score 0.96 on name, date of birth and address |
+
+Survivorship then picks one value per field and writes the golden record (`profile.person_core`):
+
+| Field | Value | Why this value |
+|---|---|---|
+| EPID | p42 |  |
+| Legal name | Jane A. Doe | Policy admin wins for legal name |
+| Date of birth | 1971-03-14 | Agreed by three sources |
+| Address | 48 Elm Ave, Newark NJ | Most recent trusted source (CRM, 2026) |
+| Email hash | em_4c1… | Most recently confirmed (web login) |
+| Household / advisor | h7 / a3 | From relationship edges |
+| Lifecycle stage | Customer | Holds an in-force policy |
+
 ### 1.3 Serving Path
 
 This runs per event or request. Most decisions use the batch scores already on the profile. A small set of moments (web visit, call center screen pop, quote abandonment) score in real time because the answer depends on what just happened.

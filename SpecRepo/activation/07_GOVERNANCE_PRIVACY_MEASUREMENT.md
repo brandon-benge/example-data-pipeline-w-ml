@@ -148,11 +148,24 @@ When a marketer wants an audience using data Legal hasn't cleared:
 
 Lineage works at two levels. Unity Catalog tracks tables and columns, not individual people. To explain one person's email, the send log carries the IDs that point back into that chain.
 
-**1. Column lineage (what Unity Catalog records).** Captured automatically whenever a Databricks job or query reads one column and writes another; the same for every person.
+**1. Column lineage (what Unity Catalog records).** Each time a job, notebook, pipeline or SQL query reads a column and writes another, Databricks adds a row to `system.access.column_lineage`. Catalog Explorer draws its graph from these rows. A row describes one read and write, not any person's values.
 
-`policies.product` → `holding_role_history.product` → `person_core.has_individual_life` → AEP field → audience → SFMC
+```sql
+SELECT source_table_full_name, source_column_name,
+       target_table_full_name, target_column_name,
+       entity_type, entity_id, entity_run_id, event_time
+FROM system.access.column_lineage
+WHERE target_table_full_name LIKE 'prod.gold.profile%'
+   OR target_table_full_name LIKE 'prod.silver.holding%';
+```
 
-The first three hops are in Unity Catalog. The last three come from AEP dataset and destination records, joined in on dataset name. Use it for impact analysis: "policy admin is changing `product`; which audiences and destinations read it?"
+| source_table_full_name | source_column_name | target_table_full_name | target_column_name | entity_type | entity_id | entity_run_id | event_time |
+|---|---|---|---|---|---|---|---|
+| `prod.bronze.policy_admin_policies` | `product` | `prod.silver.holding_role_history` | `product` | `PIPELINE` | `dlt_silver_holdings` | `upd_7731` | 2026-10-26 03:12 |
+| `prod.silver.holding_role_history` | `product` | `prod.gold.profile.person_core` | `has_individual_life` | `JOB` | `job_gold_profile` | `run_44120` | 2026-10-26 04:20 |
+| `prod.silver.holding_role_history` | `role` | `prod.gold.profile.person_core` | `has_individual_life` | `JOB` | `job_gold_profile` | `run_44120` | 2026-10-26 04:20 |
+
+The same edge gets a new row on every run, so group by source and target. The real table has more columns (account, workspace, split table names, `entity_metadata` with job or notebook IDs) and keeps a rolling year. Unity Catalog stops at Databricks: the hops into AEP and SFMC come from AEP data flow and destination run records, joined on dataset name. Use column lineage for impact: "policy admin is changing `product`; what reads it?"
 
 **2. One person's send (the IDs on the send log).** Each send log row stores which versions produced it.
 

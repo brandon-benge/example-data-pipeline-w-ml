@@ -144,40 +144,30 @@ When a marketer wants an audience using data Legal hasn't cleared:
 | Lineage | Unity Catalog lineage from source to Gold, plus AEP dataset and destination lineage, joined in the catalog so "source to activation" is one view |
 | Access | ABAC on Unity Catalog tags; AEP role-based access by sandbox and label; self-serve access granted by label, not by table |
 
-### Lineage Example: One Field From Source to Send
+### Lineage: Columns, Then One Person's Send
 
-Unity Catalog records column-level lineage for Databricks jobs and SQL. AEP records dataset, data flow and destination runs. A nightly job joins them on dataset name and run ID so one catalog view runs from source to send.
+Lineage works at two levels. Unity Catalog tracks tables and columns, not individual people. To explain one person's email, the send log carries the IDs that point back into that chain.
 
-| # | Asset | Value for `p42` | Recorded by |
-|---|---|---|---|
-| 1 | Policy admin `policies` | `policy L-88213, product=group_life, status=inforce` | Source system |
-| 2 | `bronze.policy_admin.policies` | Same row plus `_ingested_at` and CDC operation | Unity Catalog lineage |
-| 3 | `silver.holding_role_history` | `p42, L-88213, insured, 2019-01-01 to null` | Unity Catalog lineage (column level) |
-| 4 | `gold.profile.person_core.has_individual_life` | `false`, tag `GLBA_NPI` | Unity Catalog lineage |
-| 5 | AEP dataset `person_core_profile` | `false`, label `GLBA_NPI` | AEP data flow run `df_5521` |
-| 6 | Audience `wkp_xsell_life_group_only_households_v1` | `p42 realized` | AEP audience evaluation |
-| 7 | Destination `sfmc_consumer` | Row in the SFMC data extension | AEP destination run `run_8812` |
-| 8 | `send_log` | Email sent with `campaign_key` | SFMC tracking export, joined in Bronze |
+**1. Column lineage (what Unity Catalog records).** Captured automatically whenever a Databricks job or query reads one column and writes another; the same for every person.
+
+`policies.product` → `holding_role_history.product` → `person_core.has_individual_life` → AEP field → audience → SFMC
+
+The first three hops are in Unity Catalog. The last three come from AEP dataset and destination records, joined in on dataset name. Use it for impact analysis: "policy admin is changing `product`; which audiences and destinations read it?"
+
+**2. One person's send (the IDs on the send log).** Each send log row stores which versions produced it.
 
 ```json
 {
   "send_id": "s_90412",
   "enterprise_person_id": "p42",
-  "campaign_key": "fy27-wkp-life-xsell-email-wkp_xsell_life_group_only_households_v1-c021",
-  "destination_run": "run_8812",
   "audience_version": "wkp_xsell_life_group_only_households_v1@a1f9c3e",
-  "aep_dataflow_run": "df_5521",
   "gold_table_version": { "gold.profile.person_core": 1842 },
-  "fields_used": ["has_group_life", "has_individual_life"],
+  "destination_run": "run_8812",
   "labels": ["I1", "GLBA_NPI"]
 }
 ```
 
-| Question | How lineage answers it |
-|---|---|
-| Why did Jane get this email? | Walk upstream from `send_id` to the audience version, Gold table version and source rows |
-| Policy admin is changing what `status` means. What breaks? | Walk downstream from `policies.status` to every Gold column, audience, destination and model feature; owners are notified before it ships |
-| Did a restricted field reach a channel? | Every send lists its fields and labels; a `NOMKT` label on any send is an incident |
+To answer "why did Jane get this email?", open the audience at that version and query `person_core` at table version 1842 for `p42` (Delta time travel). The `labels` field is also an audit check: a `NOMKT` label on any send is an incident.
 
 ### ABAC Examples
 

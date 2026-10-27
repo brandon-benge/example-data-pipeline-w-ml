@@ -1,0 +1,24 @@
+# Catalog entry for one certified data product (07_GOVERNANCE_PRIVACY_MEASUREMENT.md, section 4).
+# Fields marked "derived" are filled by jobs, not typed by hand; CI fails if a typed value disagrees.
+name: prod.gold.profile.person_core
+description: Golden person record, one row per EPID, identity-resolved and consent-stamped
+owner_team: marketing-data-platform          # Unity Catalog owner (a group, never a person)
+steward: j.chen@example.com                  # answers "what does this field mean?"
+domain: marketing
+classification: confidential
+usage_labels: [I1, GLBA_NPI, C2:acxiom]      # derived: union of column labels (C2 = licensed append, no third-party export)
+pii: true                                    # derived: any column tagged pii=direct
+freshness_sla: ready by 05:00 ET, 99% of days
+dq_sla: 99.5% of checks passing
+dq_checks: [one_row_per_epid, epid_not_null, consent_present_for_contactable, row_count_within_2pct_of_yesterday]
+update_cadence: daily batch                  # the minutes-fresh copy is the AEP real-time profile, not this table
+upstream: [prod.silver.web_events, prod.silver.crm_contacts, prod.identity.graph_links]   # derived from system.access.table_lineage
+downstream: [aep.person_core_profile, segment.wkp_xsell_life_group_only_households_v1, ml.features.person_daily]  # derived
+access:
+  grants: [marketing-analysts: SELECT, activation-svc: SELECT]
+  abac_policies: [mask_pii_direct, deny_nomkt_columns]
+retention: 13 months of daily versions; current row kept while the person is a customer or prospect
+cost_center: CC-4417                         # also set as a tag on the building job, so system.billing.usage rolls up by product
+status: certified                            # draft | candidate | certified | deprecated
+certified_on: 2026-09-30
+review_by: 2027-03-31

@@ -144,6 +144,24 @@ When a marketer wants an audience using data Legal hasn't cleared:
 | Lineage | Unity Catalog lineage from source to Gold, plus AEP dataset and destination lineage, joined in the catalog so "source to activation" is one view |
 | Access | ABAC on Unity Catalog tags; AEP role-based access by sandbox and label; self-serve access granted by label, not by table |
 
+### Catalog Entry for a Data Product
+
+Every certified data product has one catalog entry ([examples/data_product_catalog_entry.yaml](./examples/data_product_catalog_entry.yaml)). Most fields are typed once by the owner; the ones marked "derived" are filled by jobs so they cannot go stale.
+
+| Field | Where it lives in Unity Catalog | Typed or derived |
+|---|---|---|
+| `name`, `description` | Three-part table name; table comment | Typed |
+| `owner_team` | Table owner (a group) | Typed |
+| `steward`, `domain`, `classification`, `cost_center`, `status` | Governed tags on the table | Typed |
+| `usage_labels`, `pii` | Column tags, rolled up to the table | Derived |
+| `freshness_sla`, `dq_sla`, `dq_checks` | Table properties; checked by the data quality job, which writes results to a monitoring table | Typed target, measured result |
+| `update_cadence` | Schedule of the job that writes the table | Derived |
+| `upstream`, `downstream` | `system.access.table_lineage`, plus AEP dataset and destination records | Derived |
+| `access` | Grants and ABAC policies | Typed in code, applied by CI |
+| `retention` | Table property plus a scheduled purge job | Typed |
+
+Two things to watch in a hand-written entry. A 15-minute freshness SLA with streaming cadence describes the AEP real-time profile, not the Gold table, which is daily here; keep the two entries separate. And `upstream` and `downstream` typed by hand drift within weeks, so generate them from lineage.
+
 ### Lineage: Columns, Then One Person's Send
 
 Lineage works at two levels. Unity Catalog tracks tables and columns, not individual people. To explain one person's email, the send log carries the IDs that point back into that chain.

@@ -13,8 +13,20 @@ Labels are defined once, in YAML in this repo (extending [config/governance/clas
 | Sensitive | Precise location, financial account detail | Column tags | `S`-series and custom labels |
 | Purpose restriction (custom) | `UW` underwriting, `HLTH` health, `CLM` claims detail, `NOMKT` not cleared for marketing | Separate catalog plus tags | Custom labels with policies denying marketing actions |
 | Regulatory regime | `GLBA_NPI`, `CCPA_COVERED` | Table and column tags | Custom labels where activation behavior differs |
+| Health plan data | `HIPAA_PHI` (group dental or vision claims) | Separate catalog plus tags | Not ingested into AEP |
 
 Each AEP destination declares its marketing actions (email marketing, onsite personalization, third-party export, cross-site targeting). Policies map labels to forbidden actions. That makes "this data can't be used for marketing" a configuration that fails closed, not a request for good behavior.
+
+### Health Data: HIPAA Versus State Insurance Law
+
+HIPAA (Health Insurance Portability and Accountability Act) applies to covered entities: health plans, providers and clearinghouses. A life insurer is not one for its life business. Health data collected for underwriting falls under state insurance privacy laws and GLBA; HIPAA governs only the doctor's release of records, through the authorization the applicant signs. A group dental, vision or other health plan is a covered entity, so its data is protected health information (PHI). Confirm with Privacy.
+
+| Data about Jane (`p42`) | Example value | Law | Labels | Where it lives |
+|---|---|---|---|---|
+| Physician statement from life underwriting | `bp_systolic = 128` | State insurance privacy law, GLBA (HIPAA covered only the doctor's release) | `HLTH`, `UW`, `NOMKT` | Underwriting catalog, never marketing |
+| Group dental claim through her employer's plan | `cdt_code = D2740` | HIPAA | `HIPAA_PHI`, `NOMKT` | Health plan catalog, never AEP |
+| Policy holdings | `has_individual_life = false` | GLBA | `GLBA_NPI` | Gold and AEP; no third-party export |
+| Quote page views as a prospect | `quote.started` | CCPA/CPRA (California residents) | `CCPA_COVERED` | Bronze and AEP |
 
 ### Example: the three gates with real data
 
@@ -24,8 +36,8 @@ The examples follow Jane Doe (`p42`) through `wkp_xsell_life_group_only_househol
 
 | Field (profile.person_core) | Unity Catalog column tags | AEP field labels | Marketing actions the labels forbid |
 |---|---|---|---|
-| `enterprise_person_id` | `identity=direct` | `I1` | None on its own |
-| `email` | `identity=direct`, `pii` | `I1` | Third-party export unless hashed |
+| `enterprise_person_id` | `pii=direct` | `I1` | None on its own |
+| `email` | `pii=direct` | `I1` | Third-party export unless hashed |
 | `has_group_life` | `regime=GLBA_NPI` | `GLBA_NPI` | Third-party export |
 | `has_individual_life` | `regime=GLBA_NPI` | `GLBA_NPI` | Third-party export |
 | `underwriting_class` | `purpose=UW`, `NOMKT` | `UW`, `NOMKT` | All marketing actions |
@@ -131,6 +143,41 @@ When a marketer wants an audience using data Legal hasn't cleared:
 | Quality service level agreements (SLAs) | Freshness, completeness, uniqueness and reconciliation per data product, with tests that block publish |
 | Lineage | Unity Catalog lineage from source to Gold, plus AEP dataset and destination lineage, joined in the catalog so "source to activation" is one view |
 | Access | ABAC on Unity Catalog tags; AEP role-based access by sandbox and label; self-serve access granted by label, not by table |
+
+### Lineage Example: One Field From Source to Send
+
+Unity Catalog records column-level lineage for Databricks jobs and SQL. AEP records dataset, data flow and destination runs. A nightly job joins them on dataset name and run ID so one catalog view runs from source to send.
+
+| # | Asset | Value for `p42` | Recorded by |
+|---|---|---|---|
+| 1 | Policy admin `policies` | `policy L-88213, product=group_life, status=inforce` | Source system |
+| 2 | `bronze.policy_admin.policies` | Same row plus `_ingested_at` and CDC operation | Unity Catalog lineage |
+| 3 | `silver.holding_role_history` | `p42, L-88213, insured, 2019-01-01 to null` | Unity Catalog lineage (column level) |
+| 4 | `gold.profile.person_core.has_individual_life` | `false`, tag `GLBA_NPI` | Unity Catalog lineage |
+| 5 | AEP dataset `person_core_profile` | `false`, label `GLBA_NPI` | AEP data flow run `df_5521` |
+| 6 | Audience `wkp_xsell_life_group_only_households_v1` | `p42 realized` | AEP audience evaluation |
+| 7 | Destination `sfmc_consumer` | Row in the SFMC data extension | AEP destination run `run_8812` |
+| 8 | `send_log` | Email sent with `campaign_key` | SFMC tracking export, joined in Bronze |
+
+```json
+{
+  "send_id": "s_90412",
+  "enterprise_person_id": "p42",
+  "campaign_key": "fy27-wkp-life-xsell-email-wkp_xsell_life_group_only_households_v1-c021",
+  "destination_run": "run_8812",
+  "audience_version": "wkp_xsell_life_group_only_households_v1@a1f9c3e",
+  "aep_dataflow_run": "df_5521",
+  "gold_table_version": { "gold.profile.person_core": 1842 },
+  "fields_used": ["has_group_life", "has_individual_life"],
+  "labels": ["I1", "GLBA_NPI"]
+}
+```
+
+| Question | How lineage answers it |
+|---|---|
+| Why did Jane get this email? | Walk upstream from `send_id` to the audience version, Gold table version and source rows |
+| Policy admin is changing what `status` means. What breaks? | Walk downstream from `policies.status` to every Gold column, audience, destination and model feature; owners are notified before it ships |
+| Did a restricted field reach a channel? | Every send lists its fields and labels; a `NOMKT` label on any send is an incident |
 
 ### ABAC Examples
 

@@ -18,6 +18,8 @@ Acronyms are also spelled out on first use in each file. Terms marked with a sta
 | EPID | Enterprise person ID, the durable ID the identity spine issues (`enterprise_person_id`) |
 | FAC | Federated Audience Composition: AEP audiences built from warehouse tables without copying the full data into AEP |
 | GLBA | Gramm-Leach-Bliley Act, US financial privacy law |
+| HIPAA | Health Insurance Portability and Accountability Act: protects health data held by health plans, providers and clearinghouses. Life underwriting data is usually governed by state insurance privacy law and GLBA instead |
+| Lineage | A record of where each value came from and what reads it, from source table to Gold, AEP and the send |
 | Marketing action | In AEP, the declared use of a destination, such as email targeting, onsite personalization or export to a third party. Policies say which data labels may not be used for which actions, and AEP blocks activation when they conflict |
 | MDM | Master data management, the enterprise golden record for parties |
 | ML | Machine learning |
@@ -27,6 +29,8 @@ Acronyms are also spelled out on first use in each file. Terms marked with a sta
 | NBA ★ | Next best action: ranks every eligible offer or message for a person and picks one, using response odds, value, eligibility and fatigue ([05_ML.md](./05_ML.md), model 5) |
 | NPN / CRD | National Producer Number (insurance producer licensing) / Central Registration Depository number (registered representatives) |
 | PoC | Proof of concept |
+| PHI | Protected health information: health data held by a HIPAA covered entity, such as a group dental plan |
+| PII | Personally identifiable information: data that identifies a person directly (name, email, SSN) or indirectly (device ID) |
 | PSI | Population stability index: a number that measures how much a distribution (of scores or a feature) has shifted from the training baseline; used to detect drift |
 | PQL | In AEP: Profile Query Language, the segment definition language. In the Benge Software file: product-qualified lead |
 | RACI | Responsible, accountable, consulted, informed: a role assignment matrix |

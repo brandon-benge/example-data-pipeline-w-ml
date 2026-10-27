@@ -128,6 +128,70 @@ sequenceDiagram
     LOG->>DBX: Joined into activation.send_log
 ```
 
+### 4.1a Scheduled Personalized Sends at Scale
+
+Example: the workplace cross-sell email to about 42,000 people every Tuesday at 09:00 local time, each with a different offer, image and advisor. Decide everything per person in Databricks; SFMC only fills the template.
+
+**One row per person, decided upstream:**
+
+```sql
+-- activation.send_ready_wkp_life  (Gold, built 05:20, one row per person)
+enterprise_person_id  p42
+email                 jane.doe@example.com          -- I1
+first_name            Jane                          -- I1
+offer_code            TERM_GAP_500K                 -- from next best action ranking
+content_variant       young_family                  -- picks hero image and copy
+advisor_name          R. Patel                      -- null: show the 1-800 line instead
+advisor_phone         +1 973 555 0142
+coverage_gap_band     250k-500k                     -- GLBA_NPI
+send_local_time       09:00
+send_tz               America/New_York
+holdout               false
+campaign_key          fy27-wkp-life-xsell-email-wkp_xsell_life_group_only_households_v1-c021
+```
+
+**The schedule:**
+
+| Time (ET) | Where | What happens | Check or output |
+|---|---|---|---|
+| 05:00 | Databricks | Gold profile, scores and suppressions ready | Freshness check passes |
+| 05:20 | Databricks | Next best action picks one offer per person; `send_ready` table built | 46,870 eligible; 4,690 (10%) held out and logged; 42,180 rows to send |
+| 06:00 | AEP | Batch segmentation and the three gates | 42,180 in the audience; 1,204 dropped on consent |
+| 06:30 | AEP to SFMC | File export: CSV to SFMC SFTP, Automation Studio imports it into the data extension | 40,976 rows loaded; count matches within 1% |
+| 08:30 | SFMC | Pre-send checks: seed list proofs for each content variant, count against expected size, frequency cap | Pass. A miss pauses the send and pages the owner |
+| 09:00 local | SFMC | Journey sends at 09:00 in each time zone, throttled per hour | Eastern first, Pacific three hours later |
+| Through the day | SFMC to Bronze | Send, open, click, bounce and unsubscribe events flow back | Joined into `send_log` by `campaign_key` |
+
+**The template only fills slots (AMPscript):**
+
+```text
+%%[
+SET @offer   = AttributeValue("offer_code")
+SET @advisor = AttributeValue("advisor_name")
+]%%
+Hi %%=ProperCase(AttributeValue("first_name"))=%%,
+%%=ContentBlockByKey(Concat("offer_", @offer))=%%
+%%[ IF NOT Empty(@advisor) THEN ]%%
+  Your advisor %%=v(@advisor)=%% can walk you through it: %%=AttributeValue("advisor_phone")=%%
+%%[ ELSE ]%%
+  Call us at 1-800-555-0100.
+%%[ ENDIF ]%%
+```
+
+Marketo does the same with tokens such as `{{lead.Offer Code}}` and dynamic content by segment, from a scheduled batch campaign; it suits the smaller advisor and employer programs.
+
+**What keeps it safe at this volume:**
+
+| Rule | How |
+|---|---|
+| Decide upstream, render in the channel | Databricks picks the offer, variant and advisor per person. SFMC only fills slots. No business logic in the template |
+| Bulk moves as a file | Tens of thousands of rows go as a file import, not record-by-record API calls, which are slower and rate limited. Verify the export options your AEP license includes |
+| Count reconciliation | Rows exported, rows loaded and rows sent must agree within 1%, or the send pauses |
+| Consent twice | Checked by AEP at export and by SFMC at send, so an opt-out after 06:30 still wins |
+| Frequency cap | One marketing email per person per 72 hours across all programs, enforced upstream from both send logs |
+| Holdout | 10% randomly held back and logged, so uplift can be measured |
+| Kill switch | Owner can pause the journey; the reason and counts go on the send log |
+
 ### 4.2 Quote Abandon: Streaming Trigger With Advisor Handoff
 
 ```mermaid

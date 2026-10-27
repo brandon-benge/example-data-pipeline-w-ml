@@ -180,7 +180,7 @@ Hi %%=ProperCase(AttributeValue("first_name"))=%%,
 
 Marketo does the same with tokens such as `{{lead.Offer Code}}` and dynamic content by segment, from a scheduled batch campaign; it suits the smaller advisor and employer programs.
 
-**What keeps it safe at this volume:**
+**What keeps it safe at this volume:**[^send-once]
 
 | Rule | How |
 |---|---|
@@ -191,6 +191,8 @@ Marketo does the same with tokens such as `{{lead.Offer Code}}` and dynamic cont
 | Frequency cap | One marketing email per person per 72 hours across all programs, enforced upstream from both send logs |
 | Holdout | 10% randomly held back and logged, so uplift can be measured |
 | Kill switch | Owner can pause the journey; the reason and counts go on the send log |
+
+[^send-once]: **Who makes sure each person gets one email?** SFMC and AEP run their own send workers internally; you configure them, you don't build them. The data extension key is the EPID, the journey blocks re-entry, and one scheduled run per campaign is the authority for that run. You own a send ledger keyed by `send_key = hash(EPID, campaign_key, send_date)`; a key already in the send log is skipped. Delivery is at least once, made effectively once by that key. Workers and leases are only needed if your own code sends (for example direct email API calls). Then each ledger row is a lease (`status=leased, lease_owner=worker-07, lease_expires=09:02:30, attempt=1`) claimed with a conditional update (Postgres `SKIP LOCKED`, a DynamoDB conditional write or a Delta `MERGE`); the key is passed to the provider as its idempotency key, and an expired lease lets another worker retry without a duplicate. No consensus protocol is needed, only one strongly consistent store with compare-and-set.
 
 ### 4.2 Quote Abandon: Streaming Trigger With Advisor Handoff
 

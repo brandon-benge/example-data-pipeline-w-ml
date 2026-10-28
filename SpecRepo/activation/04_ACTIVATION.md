@@ -154,9 +154,12 @@ campaign_key          fy27-wkp-life-xsell-email-wkp_xsell_life_group_only_househ
 
 | Time (ET) | Where | What happens | Check or output |
 |---|---|---|---|
-| 05:00 | Databricks | Gold profile, scores and suppressions ready | Freshness check passes |
-| 05:20 | Databricks | Next best action picks one offer per person; `send_ready` table built | 46,870 eligible; 4,690 (10%) held out and logged; 42,180 rows to send |
-| 06:00 | AEP | Batch segmentation and the three gates | 42,180 in the audience; 1,204 dropped on consent |
+| 04:45 | Databricks | Gold profile, scores and suppressions refreshed; `contact_eligibility` rebuilt from the send log | Freshness check passes. `p42 capped_until 10-29 09:10` |
+| 05:00 | Databricks to AEP | **Batch 1, profile load:** facts about each person, upserted onto the AEP profile | `p42 annuity_propensity=0.71 assigned_advisor=null last_mkt_email_at=10-26 09:10` |
+| 05:20 | Databricks | Next best action picks one offer per person; frequency cap and holdout applied; `send_ready` table built | 46,870 eligible; 4,690 (10%) held out and logged; 42,180 rows to send |
+| 05:30 | Databricks to AEP | **Batch 2, audience load:** who is in this campaign's audience, sent as a list (Federated Audience Composition or audience import) | `p55 cns_xsell_annuity_rollover_window_v1 existing`; 42,180 members |
+| 06:00 | AEP | **Batch 3, AEP batch segmentation:** AEP evaluates its own segment rules against the profiles loaded at 05:00. This campaign's audience was built in Databricks, so it passes through unchanged; rule-based audiences for other campaigns refresh here | Segment memberships updated on each profile |
+| 06:00 | AEP | Destination dataflow runs the three gates (labels, consent, allow-list) | 1,204 dropped on consent; 40,976 to export |
 | 06:30 | AEP to SFMC | File export: CSV to SFMC SFTP, Automation Studio imports it into the data extension | 40,976 rows loaded; count matches within 1% |
 | 08:30 | SFMC | Pre-send checks: seed list proofs for each content variant, count against expected size, frequency cap | Pass. A miss pauses the send and pages the owner |
 | 09:00 local | SFMC | Journey sends at 09:00 in each time zone, throttled per hour | Eastern first, Pacific three hours later |
@@ -188,7 +191,7 @@ Marketo does the same with tokens such as `{{lead.Offer Code}}` and dynamic cont
 | Bulk moves as a file | Tens of thousands of rows go as a file import, not record-by-record API calls, which are slower and rate limited. Verify the export options your AEP license includes |
 | Count reconciliation | Rows exported, rows loaded and rows sent must agree within 1%, or the send pauses |
 | Consent twice | Checked by AEP at export and by SFMC at send, so an opt-out after 06:30 still wins |
-| Frequency cap | One marketing email per person per 72 hours across all programs. Enforced in Databricks when the audience is built (05:00): a `contact_eligibility` table reads the Gold send log, which holds both SFMC and Marketo sends, and anyone emailed in the last 72 hours is left out before AEP sees the audience. Streaming triggers check the same rule through a `last_mkt_email_at` profile attribute [^freq-cap] |
+| Frequency cap | One marketing email per person per 72 hours across all programs. Enforced in Databricks when the audience is built (05:20): a `contact_eligibility` table reads the Gold send log, which holds both SFMC and Marketo sends, and anyone emailed in the last 72 hours is left out before AEP sees the audience. Streaming triggers check the same rule through a `last_mkt_email_at` profile attribute [^freq-cap] |
 | Holdout | 10% randomly held back and logged, so uplift can be measured |
 | Kill switch | Owner can pause the journey; the reason and counts go on the send log |
 
